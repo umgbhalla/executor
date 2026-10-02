@@ -18,3 +18,6 @@ apps/hosted/cloud/.generated/
 
 # Detached preview handoffs (see notes/preview-handoffs.md)
 .preview/
+
+# Isolated task worktrees
+.rifts/

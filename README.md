@@ -1,5 +1,8 @@
 # executor-next
 
+Our fork uses v2 on both `main` and `v2`. For private deployment on Cloudflare,
+read [the fork deployment guide](deployment/CLOUDFLARE.md).
+
 The canonical development checkout is `~/agent-workspace/executor-next`.
 Run `bun run workspace:check` before using the shared preview; use
 `bun run workspace:check --task` on an isolated task branch. See

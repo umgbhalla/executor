@@ -1,0 +1,15 @@
+name: Build private self-host
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build our v2 source
+        env:
+          EXECUTOR_BUILD_VERSION: ${{ github.sha }}
+        run: docker compose -f apps/hosted/self-host/compose.yaml build
