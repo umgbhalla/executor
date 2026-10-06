@@ -32,3 +32,6 @@ export {
   credentialKey,
   type CredentialOutbound,
 } from "./implementation/credential-handles.ts";
+
+/** Native workflow hosts share the same private callback protocol. */
+export { PreparedWorkflow, WorkflowHostCommand } from "./contracts/workerd-host.ts";

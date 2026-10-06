@@ -6,6 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PgliteClient } from "@effect/sql-pglite";
 import { executorSkillFiles } from "@executor-js/app-templates/executor";
 import { bindingWorkerdApps } from "@executor-js/sdk/workerd";
+import type { Executor } from "@executor-js/sdk/core";
 import { ScheduleHostReady } from "@executor-js/sdk/scheduling";
 import { telemetryConfig, telemetryLayer } from "@executor-js/telemetry";
 import { urlPolicyConfig } from "@executor-js/utils/url-policy";
@@ -31,6 +32,7 @@ import { selfHostDatabaseSchema } from "./implementation/database-schema.ts";
 import {
   selfHostExecutorServices,
   SelfHostWorkflowRequests,
+  type SelfHostPlatform,
 } from "./implementation/executor-services.ts";
 import { selfHostRouteMap } from "./implementation/routes.ts";
 import {
@@ -55,7 +57,7 @@ interface ProductStub {
   workflow(request: Request): Promise<Response>;
   exportDatabase(): Promise<Response>;
 }
-interface Environment {
+export interface ProductEnvironment {
   readonly PRODUCT: { getByName(name: string): ProductStub };
   readonly LEGACY_DATABASE: HttpBinding;
   readonly NATIVE: HttpBinding;
@@ -78,7 +80,23 @@ const configuration = (native: HttpBinding) =>
     catch: () => new Error("Cannot read host configuration"),
   }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))));
 
-const prepare = (state: DurableObjectState, env: Environment) =>
+/** Reuse the private hosted product while each host supplies its own capabilities. */
+export const prepareProduct = (
+  state: DurableObjectState,
+  env: ProductEnvironment,
+  options: {
+    readonly databaseSchema?: Layer.Layer<
+      Layer.Success<typeof selfHostDatabaseSchema>,
+      unknown,
+      Layer.Services<typeof selfHostDatabaseSchema>
+    >;
+    readonly auth?: Parameters<typeof selfHostRouteMap>[0]["auth"];
+    readonly localTelemetry?: boolean;
+    readonly platform?: (
+      executor: Effect.Effect<Executor>,
+    ) => Effect.Effect<SelfHostPlatform, unknown, Scope.Scope>;
+  } = {},
+) =>
   Effect.gen(function* () {
     const fs = yield* prepareProductFilesystem(state.storage, env.LEGACY_DATABASE);
     const pg = yield* Effect.acquireRelease(
@@ -109,9 +127,13 @@ const prepare = (state: DurableObjectState, env: Environment) =>
     const telemetry = yield* telemetryConfig("executor-selfhost");
     const common = yield* Layer.build(
       Layer.mergeAll(
-        selfHostDatabaseSchema.pipe(Layer.provideMerge(PgliteClient.layer({ liveClient: pg }))),
+        (options.databaseSchema ?? selfHostDatabaseSchema).pipe(
+          Layer.provideMerge(PgliteClient.layer({ liveClient: pg })),
+        ),
         telemetryLayer(
-          telemetry.traces === undefined && telemetry.logs === undefined
+          options.localTelemetry !== false &&
+            telemetry.traces === undefined &&
+            telemetry.logs === undefined
             ? {
                 ...telemetry,
                 traces: { url: "http://127.0.0.1:4318/v1/traces" },
@@ -136,15 +158,18 @@ const prepare = (state: DurableObjectState, env: Environment) =>
       const blobs = bindingBlobStore(env.BLOBS);
       const directory = yield* Config.NonEmptyString("EXECUTOR_REPOSITORIES_DIR");
       const services = yield* Layer.build(
-        selfHostExecutorServices(egress, () =>
-          Effect.gen(function* () {
-            const host = yield* bindingWorkerdApps({
-              binding: env.APPS,
-              authorization: "service-binding",
-              blobs,
-            });
-            return { ...host, blobs, repositories: bindingRepositories(env.NATIVE, directory) };
-          }),
+        selfHostExecutorServices(
+          egress,
+          options.platform ??
+            (() =>
+              Effect.gen(function* () {
+                const host = yield* bindingWorkerdApps({
+                  binding: env.APPS,
+                  authorization: "service-binding",
+                  blobs,
+                });
+                return { ...host, blobs, repositories: bindingRepositories(env.NATIVE, directory) };
+              })),
         ),
       );
       const routes = yield* selfHostRouteMap({
@@ -152,6 +177,7 @@ const prepare = (state: DurableObjectState, env: Environment) =>
         egress,
         executorServices: Layer.succeedContext(services),
         dashboard: bindingDashboard(env.DASHBOARD, dashboard),
+        ...(options.auth === undefined ? {} : { auth: options.auth }),
       });
       const http = yield* HttpRouter.toHttpEffect(routes).pipe(
         Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
@@ -189,11 +215,11 @@ const prepare = (state: DurableObjectState, env: Environment) =>
  * and resets the object. So the store opens outside it, and every entry point waits for the open
  * product instead. Nothing is served, built or run in the background before the open finishes.
  */
-export class ExecutorProduct extends DurableObject<Environment> implements ProductStub {
+export class ExecutorProduct extends DurableObject<ProductEnvironment> implements ProductStub {
   readonly #state: DurableObjectState;
-  readonly #env: Environment;
-  #opening: Promise<Effect.Success<ReturnType<typeof prepare>>> | undefined;
-  constructor(state: DurableObjectState, env: Environment) {
+  readonly #env: ProductEnvironment;
+  #opening: Promise<Effect.Success<ReturnType<typeof prepareProduct>>> | undefined;
+  constructor(state: DurableObjectState, env: ProductEnvironment) {
     super(state, env);
     this.#state = state;
     this.#env = env;
@@ -213,7 +239,7 @@ export class ExecutorProduct extends DurableObject<Environment> implements Produ
     try {
       const config = await Effect.runPromise(configuration(this.#env.NATIVE));
       const product = await Effect.runPromise(
-        prepare(this.#state, this.#env).pipe(
+        prepareProduct(this.#state, this.#env).pipe(
           Effect.provideService(Scope.Scope, scope),
           Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
           Effect.provide(FetchHttpClient.layer),
@@ -248,7 +274,7 @@ export class ExecutorProduct extends DurableObject<Environment> implements Produ
 }
 
 /** Private service binding used by the workerd workflow engine. */
-export class WorkflowCallbacks extends WorkerEntrypoint<Environment> {
+export class WorkflowCallbacks extends WorkerEntrypoint<ProductEnvironment> {
   async fetch(request: Request): Promise<Response> {
     return this.env.PRODUCT.getByName("product").workflow(request);
   }
@@ -259,7 +285,7 @@ export class WorkflowCallbacks extends WorkerEntrypoint<Environment> {
  * They never cross the network, so they carry a fixed internal source instead of any client
  * address header the sender supplied.
  */
-export class SelfOrigin extends WorkerEntrypoint<Environment> {
+export class SelfOrigin extends WorkerEntrypoint<ProductEnvironment> {
   async fetch(request: Request): Promise<Response> {
     const internal = new Request(request);
     internal.headers.set("x-executor-client-ip", "127.0.0.1");
@@ -268,7 +294,7 @@ export class SelfOrigin extends WorkerEntrypoint<Environment> {
 }
 
 /** Only the offline supervisor binds a socket to this entrypoint. */
-export class ProductExport extends WorkerEntrypoint<Environment> {
+export class ProductExport extends WorkerEntrypoint<ProductEnvironment> {
   async fetch(): Promise<Response> {
     return this.env.PRODUCT.getByName("product").exportDatabase();
   }
@@ -276,7 +302,7 @@ export class ProductExport extends WorkerEntrypoint<Environment> {
 
 /** Public traffic can only reach the product's authenticated route map. */
 export default {
-  fetch(request: Request, env: Environment): Promise<Response> {
+  fetch(request: Request, env: ProductEnvironment): Promise<Response> {
     return env.PRODUCT.getByName("product").fetch(request);
   },
 };

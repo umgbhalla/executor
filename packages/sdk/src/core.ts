@@ -30,6 +30,10 @@ export {
   type WorkflowRuntime,
   type WorkflowDriver,
 } from "./contracts/workflow-runtime.ts";
-export { decodeWorkflowFailure, workflowFailureMessage } from "./contracts/workflow-errors.ts";
+export {
+  decodeWorkflowFailure,
+  workflowFailureDetail,
+  workflowFailureMessage,
+} from "./contracts/workflow-errors.ts";
 
 export { recoverAppRepositories, AppRepositoryRecovery } from "./implementation/initial-source.ts";
