@@ -1,11 +1,11 @@
-/** Private product composition. PostgreSQL file writes persist in the product Durable Object. */
+/** Private product composition. Hyperdrive owns SQL; this actor owns coordination. */
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import type { Artifacts, DurableObjectState } from "@cloudflare/workers-types";
 import { prepareProduct, type ProductEnvironment } from "@executor-js/hosted-self-host/worker";
 import { ConfigProvider, Effect, Exit, Redacted, Scope } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { privateHostedAuth } from "./auth.ts";
-import { privateHostedDatabaseSchema } from "./database.ts";
+import { privateHostedDatabase } from "./database.ts";
 import { privateApps, type AppEnvironment } from "./apps.ts";
 import { r2Blobs } from "./blobs.ts";
 import { privateRepositories } from "./sources.ts";
@@ -26,6 +26,7 @@ interface Environment extends AppEnvironment {
   EXECUTOR_ENCRYPTION_KEY: string;
   EXECUTOR_PAIRING_KEY: string;
   EXECUTOR_APP_UI_BASE_URL?: string;
+  HYPERDRIVE: { readonly connectionString: string };
 }
 
 const unavailable = { fetch: async () => new Response(null, { status: 404 }) };
@@ -72,7 +73,8 @@ export class ExecutorProduct extends DurableObject<Environment> {
         prepareProduct(this.ctx, productBindings(this.env), {
           auth: privateHostedAuth,
           localTelemetry: false,
-          databaseSchema: privateHostedDatabaseSchema,
+          appHostnameMode: "single-label",
+          database: privateHostedDatabase(this.env.HYPERDRIVE.connectionString),
           platform: () =>
             Effect.gen({ self: this }, function* () {
               const repositories = yield* privateRepositories({

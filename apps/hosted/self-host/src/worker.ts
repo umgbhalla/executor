@@ -29,6 +29,8 @@ import {
   HttpServerRequest,
 } from "effect/unstable/http";
 import { selfHostDatabaseSchema } from "./implementation/database-schema.ts";
+import { AuthDatabase } from "./contracts/database.ts";
+import { SqlClient } from "effect/unstable/sql";
 import {
   selfHostExecutorServices,
   SelfHostWorkflowRequests,
@@ -69,6 +71,7 @@ export interface ProductEnvironment {
   readonly SELF: HttpBinding;
   readonly APPS: Fetcher;
 }
+export { AuthDatabase } from "./contracts/database.ts";
 
 const configuration = (native: HttpBinding) =>
   Effect.tryPromise({
@@ -92,44 +95,58 @@ export const prepareProduct = (
     >;
     readonly auth?: Parameters<typeof selfHostRouteMap>[0]["auth"];
     readonly localTelemetry?: boolean;
+    readonly appHostnameMode?: "single-label";
+    /** An already configured SQL and auth database, for products with external Postgres. */
+    readonly database?: Layer.Layer<AuthDatabase | SqlClient.SqlClient, unknown, never>;
     readonly platform?: (
       executor: Effect.Effect<Executor>,
     ) => Effect.Effect<SelfHostPlatform, unknown, Scope.Scope>;
   } = {},
 ) =>
   Effect.gen(function* () {
-    const fs = yield* prepareProductFilesystem(state.storage, env.LEGACY_DATABASE);
-    const pg = yield* Effect.acquireRelease(
-      Effect.tryPromise(async () => {
-        const pg = new PGlite({
-          fs,
-          pgliteWasmModule,
-          initdbWasmModule,
-          fsBundle: new Blob([pgliteData]),
-          parsers: { 1082: (value) => value, 1114: (value) => value },
-        });
-        await pg.waitReady;
-        return pg;
-      }),
-      (pg) => Effect.promise(() => pg.close()),
-    );
-    yield* completeProductBootstrap(state.storage);
-    const exportDatabase = async () =>
-      new Response(await pg.dumpDataDir("none"), {
-        headers: { "content-type": "application/x-tar" },
-      });
+    const persistence =
+      options.database === undefined
+        ? yield* Effect.gen(function* () {
+            const fs = yield* prepareProductFilesystem(state.storage, env.LEGACY_DATABASE);
+            const pg = yield* Effect.acquireRelease(
+              Effect.tryPromise(async () => {
+                const pg = new PGlite({
+                  fs,
+                  pgliteWasmModule,
+                  initdbWasmModule,
+                  fsBundle: new Blob([pgliteData]),
+                  parsers: { 1082: (value) => value, 1114: (value) => value },
+                });
+                await pg.waitReady;
+                return pg;
+              }),
+              (pg) => Effect.promise(() => pg.close()),
+            );
+            yield* completeProductBootstrap(state.storage);
+            return {
+              layer: (options.databaseSchema ?? selfHostDatabaseSchema).pipe(
+                Layer.provideMerge(PgliteClient.layer({ liveClient: pg })),
+              ),
+              exportDatabase: async () =>
+                new Response(await pg.dumpDataDir("none"), {
+                  headers: { "content-type": "application/x-tar" },
+                }),
+            };
+          })
+        : {
+            layer: options.database,
+            exportDatabase: async () => new Response(null, { status: 404 }),
+          };
     if (yield* Config.Boolean("EXECUTOR_STORAGE_EXPORT").pipe(Config.withDefault(false)))
       return {
         fetch: async (_request: Request) => new Response(null, { status: 503 }),
         workflow: async (_request: Request) => new Response(null, { status: 503 }),
-        exportDatabase,
+        exportDatabase: persistence.exportDatabase,
       };
     const telemetry = yield* telemetryConfig("executor-selfhost");
     const common = yield* Layer.build(
       Layer.mergeAll(
-        (options.databaseSchema ?? selfHostDatabaseSchema).pipe(
-          Layer.provideMerge(PgliteClient.layer({ liveClient: pg })),
-        ),
+        persistence.layer,
         telemetryLayer(
           options.localTelemetry !== false &&
             telemetry.traces === undefined &&
@@ -175,6 +192,9 @@ export const prepareProduct = (
       const routes = yield* selfHostRouteMap({
         skills: executorSkillFiles(skills),
         egress,
+        ...(options.appHostnameMode === undefined
+          ? {}
+          : { appHostnameMode: options.appHostnameMode }),
         executorServices: Layer.succeedContext(services),
         dashboard: bindingDashboard(env.DASHBOARD, dashboard),
         ...(options.auth === undefined ? {} : { auth: options.auth }),
@@ -202,7 +222,7 @@ export const prepareProduct = (
         workflow: HttpEffect.toWebHandlerWith<never, Effect.Services<typeof workflow>>(context)(
           workflow,
         ),
-        exportDatabase,
+        exportDatabase: persistence.exportDatabase,
       };
     }).pipe(Effect.provideContext(common));
   });
