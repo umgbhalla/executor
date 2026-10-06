@@ -5,7 +5,9 @@ not a claim that the product has been implemented or deployed.
 
 ## Product
 
-- Run all compute and persistent storage in the owner's Cloudflare account.
+- Run application compute in the owner's Cloudflare account. Keep builds, app
+  data and source there. Connect product PostgreSQL through Hyperdrive to the
+  owner's chosen managed database.
 - Use `executor.umgbhalla.com` as the proposed dashboard, API and MCP origin.
 - Keep exactly one owner and one internal organization. Disable public signup,
   invitations, additional organizations and provider-based sign-in.
@@ -114,8 +116,15 @@ Cloudflare accepted a live Worker request that allocated 2,048 WebAssembly pages
 earlier claim that PGlite's minimum memory alone blocks deployment. It does not
 prove that PGlite can start, execute queries, and persist data within Cloudflare's
 [isolate memory limit](https://developers.cloudflare.com/workers/platform/limits/#memory).
-The private product now has static PGlite WebAssembly modules and a Durable Object
-storage adapter. An actual database and restart test is still required.
+The initial private product used static PGlite WebAssembly modules and a Durable
+Object storage adapter. The first request to the deployed stage failed with Cloudflare
+error 1101. Worker logs report: `Durable Object's isolate exceeded its memory
+limit and was reset.` Lowering PostgreSQL's WebAssembly heap to 32 MiB passed
+local database queries but failed the same live Cloudflare check. The owner
+selected Hyperdrive for PostgreSQL. The code now has a Hyperdrive adapter and a
+separate migration command. No origin database or Hyperdrive configuration has
+been provisioned, so durability and the private E2E scenario remain untested.
+Do not attach the production domain to this build.
 
 Containers do not solve durability by themselves: their disk is
 [ephemeral](https://developers.cloudflare.com/containers/concepts/architecture/).
@@ -135,9 +144,10 @@ Use real HTTP, MCP and browser scenarios under `e2e/`. Before release, prove:
 - App source deploys, tools execute, account credentials remain encrypted, and
   app data persists after Worker replacement and object restart.
 - Fresh setup, retained-data upgrades, repeat migration runs, failed-deploy
-  recovery, backup and restore work through the real Cloudflare storage adapter.
+  recovery, backup and restore work through the real PostgreSQL adapter.
 - Dashboard, app origins, OAuth callbacks and MCP discovery work over HTTPS.
 
 Account access and the build bucket are prepared. Pairing, passkey policy,
 private product composition, and source/build runtime adapters are in the task
-branch. Deployment and live acceptance checks remain work.
+branch. The first disposable stage fails at database startup. Hyperdrive origin
+provisioning, stage migration, production deployment and live checks remain work.

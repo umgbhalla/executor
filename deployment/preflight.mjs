@@ -67,7 +67,7 @@ console.log(
   JSON.stringify({
     accessReady: !failed,
     deploymentReady: false,
-    note: "Read access does not prove write access. The private Cloudflare runtime is not implemented.",
+    note: "Read access does not prove deployment or application health.",
   }),
 );
 process.exitCode = failed ? 1 : 0;
