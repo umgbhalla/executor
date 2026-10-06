@@ -1,6 +1,6 @@
 /** Private product SQL and auth share one Hyperdrive-backed PostgreSQL database. */
 import { PgClient } from "@effect/sql-pg";
-import { AuthDatabase } from "@executor-js/hosted-self-host/worker";
+import { AuthDatabase } from "@executor-js/hosted-self-host/product";
 import { Effect, Layer, Redacted } from "effect";
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";

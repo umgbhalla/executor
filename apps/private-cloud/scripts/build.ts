@@ -3,10 +3,9 @@ import { readExecutorSkills } from "@executor-js/app-templates/executor";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { build, type Plugin } from "esbuild";
 import { Effect } from "effect";
-import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPgliteBuild } from "./build-pglite.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = path.resolve(here, "..");
@@ -27,7 +26,6 @@ const mime: Record<string, string> = {
 
 await rm(output, { recursive: true, force: true });
 await mkdir(path.join(output, "modules"), { recursive: true });
-const { plugin, modules } = await createPgliteBuild(path.join(output, "modules"));
 const skills = Object.fromEntries(
   (await Effect.runPromise(readExecutorSkills.pipe(Effect.provide(NodeServices.layer)))).map(
     (file) => [file.path, file.content],
@@ -71,13 +69,13 @@ const compilerWasm: Plugin = {
     });
   },
 };
-const external = ["node:*", "cloudflare:*", ...modules.map(({ name }) => name)];
+const external = ["node:*", "cloudflare:*"];
 for (const [name, entry] of [
   ["product", "src/worker.ts"],
   ["compiler", "src/compiler.ts"],
 ] as const) {
   const outfile = path.join(output, `${name}.mjs`);
-  await build({
+  const result = await build({
     absWorkingDir: app,
     entryPoints: [entry],
     outfile,
@@ -89,21 +87,18 @@ for (const [name, entry] of [
     minify: true,
     keepNames: true,
     external,
-    plugins: [plugin, assets, ...(name === "compiler" ? [compilerWasm] : [])],
+    metafile: true,
+    plugins: [assets, ...(name === "compiler" ? [compilerWasm] : [])],
   });
-  let code = await readFile(outfile, "utf8");
-  for (const module of modules) {
-    const relative = `./modules/${path.basename(module.file)}`;
-    code = code.replaceAll(JSON.stringify(module.name), JSON.stringify(relative));
-    code = code.replaceAll(`'${module.name}'`, `'${relative}'`);
-  }
   if (
-    code.includes("executor:pg-") ||
-    code.includes("executor:pglite.") ||
-    code.includes("executor:initdb.")
+    name === "product" &&
+    Object.keys(result.metafile.inputs).some((input) =>
+      /(?:^|[/\\])(?:@electric-sql[/\\]pglite|@effect[/\\]sql-pglite|pglite-filesystem)(?:[/\\]|$)/.test(
+        input,
+      ),
+    )
   )
-    throw new Error(`Unmapped static PGlite module in ${name}`);
-  await writeFile(outfile, code);
+    throw new Error("Private product bundle includes PGlite");
 }
 await cp(web, path.join(output, "web"), { recursive: true });
-console.log(`Built private Cloudflare modules (${modules.length} static PGlite assets)`);
+console.log("Built private Cloudflare modules");

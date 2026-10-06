@@ -1,7 +1,7 @@
 /** Private product composition. Hyperdrive owns SQL; this actor owns coordination. */
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import type { Artifacts, DurableObjectState } from "@cloudflare/workers-types";
-import { prepareProduct, type ProductEnvironment } from "@executor-js/hosted-self-host/worker";
+import { prepareProduct, type ProductEnvironment } from "@executor-js/hosted-self-host/product";
 import { ConfigProvider, Effect, Exit, Redacted, Scope } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 import { privateHostedAuth } from "./auth.ts";
@@ -70,7 +70,7 @@ export class ExecutorProduct extends DurableObject<Environment> {
           : { EXECUTOR_APP_UI_BASE_URL: this.env.EXECUTOR_APP_UI_BASE_URL }),
       };
       const product = await Effect.runPromise(
-        prepareProduct(this.ctx, productBindings(this.env), {
+        prepareProduct(productBindings(this.env), {
           auth: privateHostedAuth,
           localTelemetry: false,
           appHostnameMode: "single-label",
