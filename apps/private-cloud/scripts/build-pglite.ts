@@ -1,5 +1,5 @@
 import type { Plugin } from "esbuild";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -28,9 +28,19 @@ export async function createPgliteBuild(outputDirectory: string): Promise<{
   const modules: WorkerModule[] = [];
   for (const name of ["pglite.wasm", "initdb.wasm", "pglite.data"]) {
     const file = path.join(outputDirectory, name);
-    await copyFile(path.join(directory, name), file);
-    if (name.endsWith(".wasm") && !WebAssembly.validate(await readFile(file)))
+    const bytes = await readFile(path.join(directory, name));
+    if (name.endsWith(".wasm")) {
+      // Pinned import minima reserve 128/64 MiB. SQL with small buffers needs only 32 MiB.
+      // Keep the two-byte LEB width and every other section unchanged.
+      const offset = name === "pglite.wasm" ? 5476 : 1564;
+      const expected = name === "pglite.wasm" ? 16 : 8;
+      if (bytes[offset] !== 128 || bytes[offset + 1] !== expected)
+        throw new Error(`PGlite memory import changed: ${name}`);
+      bytes[offset + 1] = 4;
+    }
+    if (name.endsWith(".wasm") && !WebAssembly.validate(bytes))
       throw new Error(`Invalid PGlite WebAssembly: ${name}`);
+    await writeFile(file, bytes);
     modules.push({
       name: `executor:${name}`,
       file,
