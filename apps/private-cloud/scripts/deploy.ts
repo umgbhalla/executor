@@ -122,19 +122,6 @@ const productConfig = {
   vars,
   routes: production ? [{ pattern: "executor.umgbhalla.com", custom_domain: true }] : [],
   assets: { directory: "./web", binding: "ASSETS", run_worker_first: true },
-  rules: [
-    {
-      type: "CompiledWasm",
-      globs: [
-        "modules/pglite.wasm",
-        "modules/initdb.wasm",
-        "modules/plpgsql.wasm",
-        "modules/pg-callback-*.wasm",
-      ],
-      fallthrough: false,
-    },
-    { type: "Data", globs: ["modules/pglite.data"], fallthrough: false },
-  ],
   find_additional_modules: true,
   base_dir: ".",
   preserve_file_names: true,

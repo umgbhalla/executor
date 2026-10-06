@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./worker": "./src/worker.ts",
+    "./product": "./src/product.ts",
     "./auth": "./src/auth.ts",
     "./database": "./src/implementation/database-schema.ts"
   },
