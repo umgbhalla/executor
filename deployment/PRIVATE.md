@@ -99,7 +99,7 @@ node deployment/preflight.mjs --env /private/path/deploy.env
 The checker emits only check names, HTTP statuses and numeric error codes. A
 failed access check exits nonzero. Success still does not mean a runtime exists.
 
-## Runtime blocker
+## Runtime validation
 
 The packaged private server uses PGlite 0.5.8. Its PostgreSQL WebAssembly module
 declares a minimum memory of 2,048 pages, or 128 MiB. Starting it with a 32 MiB
@@ -109,16 +109,13 @@ declares a minimum memory of 2,048 pages, or 128 MiB. Starting it with a 32 MiB
 memory import has 512 pages which is smaller than the declared initial of 2048
 ```
 
-Its default allocation already consumes the whole Workers isolate allowance,
-before JavaScript, schema, filesystem and request allocations. Cloudflare counts
-both JavaScript and WebAssembly within its [128 MB isolate memory limit](https://developers.cloudflare.com/workers/platform/limits/#memory).
-The existing PostgreSQL module is therefore not a deployable Workers database.
-
-The private product needs a tested Cloudflare-native storage path, or a different
-PostgreSQL module with a proven smaller memory footprint. The existing FumaDB
-SQLite adapter can be reused, but hosted schema migrations, raw PostgreSQL SQL,
-JSON operations, constraints, locks and auth transactions also need adaptation.
-Changing a binding or provider string alone is insufficient.
+Cloudflare accepted a live Worker request that allocated 2,048 WebAssembly pages
+(128 MiB). A request that allocated 3,072 pages failed. This disproves the
+earlier claim that PGlite's minimum memory alone blocks deployment. It does not
+prove that PGlite can start, execute queries, and persist data within Cloudflare's
+[isolate memory limit](https://developers.cloudflare.com/workers/platform/limits/#memory).
+The private product now has static PGlite WebAssembly modules and a Durable Object
+storage adapter. An actual database and restart test is still required.
 
 Containers do not solve durability by themselves: their disk is
 [ephemeral](https://developers.cloudflare.com/containers/concepts/architecture/).
@@ -141,6 +138,6 @@ Use real HTTP, MCP and browser scenarios under `e2e/`. Before release, prove:
   recovery, backup and restore work through the real Cloudflare storage adapter.
 - Dashboard, app origins, OAuth callbacks and MCP discovery work over HTTPS.
 
-Account access and the build bucket are prepared. Deployment still requires the
-runtime/storage port. Pairing, passkey-only policy, the separate private product,
-source/build runtime bindings and deployed acceptance checks remain work.
+Account access and the build bucket are prepared. Pairing, passkey policy,
+private product composition, and source/build runtime adapters are in the task
+branch. Deployment and live acceptance checks remain work.

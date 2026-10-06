@@ -21,7 +21,8 @@
     "apps/docs",
     "e2e/viewer",
     "apps/hosted/testing",
-    "apps/cli"
+    "apps/cli",
+    "apps/private-cloud"
   ],
   "type": "module",
   "scripts": {

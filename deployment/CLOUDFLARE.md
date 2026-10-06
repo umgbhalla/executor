@@ -26,8 +26,9 @@ serve the registry contract.
 The accepted single-owner, paired-passkey scope and current account checks are
 recorded in [private deployment requirements](PRIVATE.md). On 2026-10-06 a scoped
 deployment token was created and verified, and the private R2 bucket
-`executor-private-builds` was created and read back. The PostgreSQL WebAssembly
-memory blocker remains. No private service or DNS record has been created.
+`executor-private-builds` was created and read back. A live Worker allocated
+PGlite's minimum WebAssembly memory, but database startup and persistence still
+need a live test. No private service or DNS record has been created.
 
 The source already supports self-hosting with one persistent Docker volume.
 It does not yet provide a tested, private Cloudflare-only deployment.
@@ -81,9 +82,9 @@ storage limits must pass in the actual Cloudflare runtime.
 
 Work required:
 
-1. Compose the private password-auth product on Cloudflare. Preserve its
-   first-admin setup and authorization. Add an explicit private-user admission
-   policy before exposing it to the public Internet.
+1. Compose the private passkey product on Cloudflare. Preserve its
+   single-owner setup and authorization. Admit browser pairing with the
+   operator's manual key.
 2. Replace native host configuration, local file blobs, native Git and local
    workerd bindings. Reuse the existing Cloudflare R2, source and sandbox adapters
    where their contracts match.

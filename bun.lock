@@ -179,6 +179,7 @@
     "apps/hosted/self-host/web": {
       "name": "@executor-js/hosted-self-host-web",
       "dependencies": {
+        "@better-auth/passkey": "1.7.5",
         "@effect/atom-react": "https://pkg.pr.new/Effect-TS/effect/@effect/atom-react@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
         "@executor-js/dashboard-start": "workspace:*",
         "@executor-js/devtools": "workspace:*",
@@ -187,6 +188,7 @@
         "@executor-js/ui": "workspace:*",
         "@tanstack/react-router": "1.170.41",
         "@tanstack/react-start": "1.168.60",
+        "better-auth": "1.7.5",
         "effect": "https://pkg.pr.new/Effect-TS/effect/effect@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -389,6 +391,46 @@
         "@sentry/vite-plugin": "5.4.0",
         "@types/react": "^19.2.14",
         "@types/react-dom": "^19.2.3",
+      },
+    },
+    "apps/private-cloud": {
+      "name": "@executor-js/private-cloud",
+      "dependencies": {
+        "@better-auth/core": "1.7.5",
+        "@better-auth/passkey": "1.7.5",
+        "@cloudflare/worker-bundler": "0.2.4",
+        "@effect/platform-browser": "https://pkg.pr.new/Effect-TS/effect/@effect/platform-browser@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
+        "@effect/sql-pglite": "https://pkg.pr.new/Effect-TS/effect/@effect/sql-pglite@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
+        "@electric-sql/pglite": "0.5.8",
+        "@executor-js/app-data": "workspace:*",
+        "@executor-js/app-management": "workspace:*",
+        "@executor-js/app-registry": "workspace:*",
+        "@executor-js/app-source": "workspace:*",
+        "@executor-js/app-templates": "workspace:*",
+        "@executor-js/dashboard-start": "workspace:*",
+        "@executor-js/hosted-self-host": "workspace:*",
+        "@executor-js/hosted-self-host-web": "workspace:*",
+        "@executor-js/hosted-server": "workspace:*",
+        "@executor-js/mcp": "workspace:*",
+        "@executor-js/mcp-auth": "workspace:*",
+        "@executor-js/sdk": "workspace:*",
+        "@executor-js/telemetry": "workspace:*",
+        "@executor-js/utils": "workspace:*",
+        "apps": "workspace:*",
+        "better-auth": "1.7.5",
+        "effect": "https://pkg.pr.new/Effect-TS/effect/effect@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
+        "esbuild": "0.28.2",
+        "fumadb-effect": "workspace:*",
+        "kysely": "0.29.6",
+        "zod": "4.5.4",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "5.20260729.1",
+        "@executor-js/authorization": "workspace:*",
+        "@executor-js/catalog": "workspace:*",
+        "@modelcontextprotocol/sdk": "1.30.0",
+        "@types/proper-lockfile": "4.1.4",
+        "esbuild": "0.28.2",
       },
     },
     "e2e/viewer": {
@@ -1451,6 +1493,8 @@
     "@executor-js/mcp-auth": ["@executor-js/mcp-auth@workspace:packages/mcp-auth"],
 
     "@executor-js/playground": ["@executor-js/playground@workspace:playground/sdk"],
+
+    "@executor-js/private-cloud": ["@executor-js/private-cloud@workspace:apps/private-cloud"],
 
     "@executor-js/reactivity": ["@executor-js/reactivity@workspace:packages/reactivity"],
 

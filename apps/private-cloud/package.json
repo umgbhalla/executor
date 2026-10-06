@@ -1,29 +1,26 @@
 {
-  "name": "@executor-js/hosted-self-host",
+  "name": "@executor-js/private-cloud",
   "private": true,
   "type": "module",
-  "exports": {
-    "./worker": "./src/worker.ts",
-    "./auth": "./src/auth.ts",
-    "./database": "./src/implementation/database-schema.ts"
-  },
+  "exports": {},
   "scripts": {
-    "start": "bun run ../../../packages/apps/scripts/build.mjs && bun src/main.ts",
-    "build": "bun run ../../../packages/apps/scripts/build.mjs && bun build src/main.ts --target=bun --packages=external --outdir=dist --entry-naming=\"[name].mjs\"",
-    "package:runtime": "bun scripts/package-runtime.ts"
+    "build": "node scripts/build.ts",
+    "deploy": "node scripts/deploy.ts"
   },
   "dependencies": {
     "@better-auth/core": "1.7.5",
+    "@better-auth/passkey": "1.7.5",
+    "@cloudflare/worker-bundler": "0.2.4",
     "@effect/platform-browser": "https://pkg.pr.new/Effect-TS/effect/@effect/platform-browser@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
-    "@effect/platform-bun": "https://pkg.pr.new/Effect-TS/effect/@effect/platform-bun@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
-    "@effect/platform-node": "https://pkg.pr.new/Effect-TS/effect/@effect/platform-node@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
     "@effect/sql-pglite": "https://pkg.pr.new/Effect-TS/effect/@effect/sql-pglite@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
     "@electric-sql/pglite": "0.5.8",
+    "@executor-js/app-data": "workspace:*",
     "@executor-js/app-management": "workspace:*",
     "@executor-js/app-registry": "workspace:*",
     "@executor-js/app-source": "workspace:*",
     "@executor-js/app-templates": "workspace:*",
     "@executor-js/dashboard-start": "workspace:*",
+    "@executor-js/hosted-self-host": "workspace:*",
     "@executor-js/hosted-self-host-web": "workspace:*",
     "@executor-js/hosted-server": "workspace:*",
     "@executor-js/mcp": "workspace:*",
@@ -34,10 +31,9 @@
     "apps": "workspace:*",
     "better-auth": "1.7.5",
     "effect": "https://pkg.pr.new/Effect-TS/effect/effect@c7d1ffff31a3e2ae0b0b0796b742bddeb797269d",
+    "esbuild": "0.28.2",
     "fumadb-effect": "workspace:*",
     "kysely": "0.29.6",
-    "proper-lockfile": "4.1.2",
-    "tldts": "7.4.13",
     "zod": "4.5.4"
   },
   "devDependencies": {
