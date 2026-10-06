@@ -138,10 +138,96 @@ layer(TestLive, { excludeTestServices: true })("Private owner authentication", (
                 .waitFor(),
             );
           });
-          yield* pair;
+          yield* browser.use("Paste the manual key for the rejected ceremony", (page) =>
+            page.getByLabel("Pairing key", { exact: true }).fill(Redacted.value(pairingKey)),
+          );
+          yield* browser.use("Open paired enrollment", (page) =>
+            page
+              .getByRole("button", { name: "Pair a passkey or hardware key", exact: true })
+              .click(),
+          );
+          yield* browser.use("Ask the browser for an unverified ceremony", (page) =>
+            page.route("**/api/auth/passkey/generate-register-options*", (route) =>
+              route.fetch().then((response) =>
+                response.json().then((body) =>
+                  route.fulfill({
+                    response,
+                    json: {
+                      ...body,
+                      authenticatorSelection: {
+                        ...body.authenticatorSelection,
+                        userVerification: "preferred",
+                      },
+                    },
+                  }),
+                ),
+              ),
+            ),
+          );
+          yield* driver("Disable authenticator user verification", () =>
+            session.send("WebAuthn.setUserVerified", {
+              authenticatorId: authenticator.authenticatorId,
+              isUserVerified: false,
+            }),
+          );
+          const rejected = yield* browser.use(
+            "Server rejects the signed unverified ceremony",
+            (page) =>
+              Promise.all([
+                page.waitForResponse(
+                  (response) =>
+                    new URL(response.url()).pathname === "/api/auth/passkey/verify-registration",
+                ),
+                page
+                  .getByRole("button", { name: "Add a passkey or hardware key", exact: true })
+                  .click(),
+              ]).then(([response]) => response.status()),
+          );
+          expect(rejected).toBe(403);
+          yield* browser.use("The failed ceremony remains available for retry", (page) =>
+            page.getByRole("alert").waitFor(),
+          );
+          const rejectedCredentials = yield* driver("Read the rejected hardware credential", () =>
+            session.send("WebAuthn.getCredentials", {
+              authenticatorId: authenticator.authenticatorId,
+            }),
+          );
+          yield* Effect.forEach(rejectedCredentials.credentials, (credential) =>
+            driver("Remove the unregistered hardware credential", () =>
+              session.send("WebAuthn.removeCredential", {
+                authenticatorId: authenticator.authenticatorId,
+                credentialId: credential.credentialId,
+              }),
+            ),
+          );
+          yield* browser.use("Restore real registration options", (page) =>
+            page.unroute("**/api/auth/passkey/generate-register-options*"),
+          );
+          yield* driver("Restore authenticator user verification", () =>
+            session.send("WebAuthn.setUserVerified", {
+              authenticatorId: authenticator.authenticatorId,
+              isUserVerified: true,
+            }),
+          );
+          yield* browser.use("Enroll the verified passkey", (page) =>
+            page
+              .getByRole("button", { name: "Add a passkey or hardware key", exact: true })
+              .click(),
+          );
+          yield* browser.use("Verified enrollment completes", (page) =>
+            page
+              .getByRole("button", { name: "Pair a passkey or hardware key", exact: true })
+              .waitFor(),
+          );
           expect(
             (yield* request("Enrollment does not create a session", "/api/auth/get-session")).body,
           ).toBeNull();
+          expect(
+            (yield* request(
+              "Authentication options require user verification",
+              "/api/auth/passkey/generate-authenticate-options",
+            )).body.userVerification,
+          ).toBe("required");
           yield* browser.use("Sign in with the verified passkey", (page) =>
             page.getByRole("button", { name: "Sign in with a passkey", exact: true }).click(),
           );
@@ -263,6 +349,29 @@ layer(TestLive, { excludeTestServices: true })("Private owner authentication", (
             Effect.timeout("5 seconds"),
             Effect.tap((response) => Effect.sync(() => expect(response.status).toBe(401))),
           );
+          const browserBoundary = yield* request(
+            "Create a key to check browser isolation",
+            "/api/auth/api-key/create",
+            "POST",
+            {
+              name: "Browser isolation",
+              expiresIn: 60,
+              metadata: { organization: "private-executor" },
+            },
+          );
+          expect(browserBoundary.status).toBe(200);
+          expect(
+            (yield* request("End owner browser session", "/api/auth/sign-out", "POST", {})).status,
+          ).toBe(200);
+          expect(
+            (yield* request(
+              "Live API key cannot become a browser session",
+              "/api/auth/get-session",
+              "GET",
+              undefined,
+              { authorization: `Bearer ${browserBoundary.body.key}` },
+            )).body,
+          ).toBeNull();
           yield* browser.checkpoint(
             "Multiple owner passkeys and revocable pinned agent keys verified",
           );
