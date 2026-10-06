@@ -1,5 +1,5 @@
 /** Run this before a Worker deploy. The direct database URL belongs to the migration job. */
-import { PgClient } from "@effect/sql-pg";
+import { PgClient, PgTypes } from "@effect/sql-pg";
 import { migrateHostedDatabase } from "@executor-js/hosted-server/migrations";
 import { Config, Effect, Redacted } from "effect";
 import { Kysely, PostgresDialect } from "kysely";
@@ -16,10 +16,16 @@ export const migratePrivateDatabase = Effect.scoped(
     );
     const db = new Kysely<unknown>({ dialect: new PostgresDialect({ pool }) });
     const database = { db, type: "postgres" as const, transaction: true as const };
+    // The pinned driver omits regclass, which Effect's migration journal probes.
+    const types = PgTypes.makeRegistry();
+    types.register(2205, {
+      decode: (bytes) => PgTypes.decode(bytes, PgTypes.OID.oid, 1),
+      encode: (value) => PgTypes.encode(value, PgTypes.OID.oid),
+    });
     yield* migrateHostedDatabase({
       ...privateAuthOptions(settings, []),
       database,
       secret: Redacted.value(settings.secret),
-    }).pipe(Effect.provide(PgClient.layer({ url, maxConnections: 1, prepare: false })));
+    }).pipe(Effect.provide(PgClient.layer({ url, maxConnections: 1, prepare: false, types })));
   }),
 );

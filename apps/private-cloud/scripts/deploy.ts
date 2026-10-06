@@ -44,7 +44,22 @@ const hyperdriveId = needed(
   deployment,
   production ? "EXECUTOR_PRODUCTION_HYPERDRIVE_ID" : "EXECUTOR_STAGE_HYPERDRIVE_ID",
 );
+const databaseUrl = needed(
+  deployment,
+  production ? "EXECUTOR_PRODUCTION_DATABASE_URL" : "EXECUTOR_STAGE_DATABASE_URL",
+);
 if (!/^[a-f0-9]{32}$/.test(hyperdriveId)) throw new Error("Invalid Hyperdrive configuration ID");
+const hyperdriveResponse = await fetch(
+  `https://api.cloudflare.com/client/v4/accounts/${accountId}/hyperdrive/configs/${hyperdriveId}`,
+  { headers: { Authorization: `Bearer ${token}` } },
+);
+if (!hyperdriveResponse.ok) throw new Error("Cannot verify the Hyperdrive configuration");
+const hyperdrive = (await hyperdriveResponse.json()) as {
+  success?: boolean;
+  result?: { caching?: { disabled?: boolean } };
+};
+if (hyperdrive.success !== true || hyperdrive.result?.caching?.disabled !== true)
+  throw new Error("Hyperdrive query caching must be disabled for private Executor");
 let origin = production ? "https://executor.umgbhalla.com" : originFlag?.slice("--origin=".length);
 if (!origin) {
   const response = await fetch(
@@ -76,6 +91,22 @@ const secrets = {
     .update(`executor-app-credentials:${name}`)
     .digest("hex"),
 };
+if (!process.argv.includes("--dry-run")) {
+  try {
+    await execute(process.execPath, [path.join(app, "scripts/migrate.ts")], {
+      cwd: app,
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+        BETTER_AUTH_URL: origin,
+        BETTER_AUTH_SECRET: secrets.BETTER_AUTH_SECRET,
+        EXECUTOR_PAIRING_KEY: secrets.EXECUTOR_PAIRING_KEY,
+      },
+    });
+  } catch {
+    throw new Error("Private database migration failed; Worker deployment stopped");
+  }
+}
 const common = {
   account_id: accountId,
   compatibility_date: "2026-10-01",

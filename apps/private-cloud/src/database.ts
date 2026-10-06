@@ -9,12 +9,15 @@ export const privateHostedDatabase = (connectionString: string) =>
   Layer.effect(
     AuthDatabase,
     Effect.gen(function* () {
-      const pool = yield* Effect.acquireRelease(
-        Effect.sync(() => new Pool({ connectionString, max: 2, idleTimeoutMillis: 30_000 })),
-        (pool) => Effect.promise(() => pool.end()),
-      );
       const db = yield* Effect.acquireRelease(
-        Effect.sync(() => new Kysely<unknown>({ dialect: new PostgresDialect({ pool }) })),
+        Effect.sync(
+          () =>
+            new Kysely<unknown>({
+              dialect: new PostgresDialect({
+                pool: new Pool({ connectionString, max: 2, idleTimeoutMillis: 30_000 }),
+              }),
+            }),
+        ),
         (db) => Effect.promise(() => db.destroy()),
       );
       const database = AuthDatabase.of({ db, type: "postgres", transaction: true });

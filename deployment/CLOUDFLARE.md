@@ -19,18 +19,19 @@ executor.umgbhalla.com -> product Worker -> Hyperdrive -> PostgreSQL
 
 The scoped Cloudflare token and stable product secrets are in mode-0600 files
 under `~/.local/state/executor-private/`. Never commit or print them. The deploy
-token currently lacks Hyperdrive read/write access. The product needs two
+token currently lacks Hyperdrive read access. The deploy script reads the selected
+configuration and refuses to deploy unless query caching is disabled. The product needs two
 separate PostgreSQL databases and cache-disabled Hyperdrive configurations:
 one disposable stage and one production database. Store their 32-character IDs
 as `EXECUTOR_STAGE_HYPERDRIVE_ID` and
-`EXECUTOR_PRODUCTION_HYPERDRIVE_ID` in `deploy.env`.
+`EXECUTOR_PRODUCTION_HYPERDRIVE_ID` in `deploy.env`. Store the matching direct
+schema-owner URLs as `EXECUTOR_STAGE_DATABASE_URL` and
+`EXECUTOR_PRODUCTION_DATABASE_URL` in that same private file.
 
-Before each deploy, run the separate SQL migration against the direct database
-URL with schema-owner rights. Supply `DATABASE_URL`, `BETTER_AUTH_URL`,
-`BETTER_AUTH_SECRET` and `EXECUTOR_PAIRING_KEY` from private local files, then run
-`bun run --cwd apps/private-cloud migrate`. Review each schema change for
-compatibility with the currently deployed Worker. The migration must finish
-before the replacement Worker is deployed; failure leaves the old Worker online.
+Each deploy runs the separate SQL migration against the direct database URL
+before uploading any replacement Worker. The migration must finish first;
+failure leaves the old Worker online. Review every new schema step for
+compatibility with the currently deployed Worker.
 
 Build shared apps, telemetry and the dashboard with the repo's pinned Bun 1.4.2.
 Then run `bun run --cwd apps/private-cloud build` and
