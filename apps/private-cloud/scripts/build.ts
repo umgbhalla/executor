@@ -83,7 +83,7 @@ for (const [name, entry] of [
     outfile,
     bundle: true,
     format: "esm",
-    platform: "browser",
+    platform: name === "product" ? "node" : "browser",
     target: "es2022",
     conditions: ["workerd"],
     minify: true,

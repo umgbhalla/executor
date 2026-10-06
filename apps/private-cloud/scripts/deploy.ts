@@ -40,6 +40,11 @@ const needed = (values: Record<string, string>, key: string) => {
 const accountId = needed(deployment, "CLOUDFLARE_ACCOUNT_ID");
 const token = needed(deployment, "CLOUDFLARE_API_TOKEN");
 const name = production ? "executor-private" : "executor-private-stage";
+const hyperdriveId = needed(
+  deployment,
+  production ? "EXECUTOR_PRODUCTION_HYPERDRIVE_ID" : "EXECUTOR_STAGE_HYPERDRIVE_ID",
+);
+if (!/^[a-f0-9]{32}$/.test(hyperdriveId)) throw new Error("Invalid Hyperdrive configuration ID");
 let origin = production ? "https://executor.umgbhalla.com" : originFlag?.slice("--origin=".length);
 if (!origin) {
   const response = await fetch(
@@ -61,7 +66,7 @@ const vars = {
   BETTER_AUTH_URL: origin,
   CLOUDFLARE_ACCOUNT_ID: accountId,
   ARTIFACTS_NAMESPACE: artifacts,
-  ...(production ? { EXECUTOR_APP_UI_BASE_URL: "https://apps.executor.umgbhalla.com" } : {}),
+  ...(production ? { EXECUTOR_APP_UI_BASE_URL: "https://umgbhalla.com" } : {}),
 };
 const secrets = {
   BETTER_AUTH_SECRET: needed(privateValues, "BETTER_AUTH_SECRET"),
@@ -114,6 +119,7 @@ const productConfig = {
   },
   worker_loaders: [{ binding: "APP_LOADER" }],
   artifacts: [{ binding: "ARTIFACTS", namespace: artifacts }],
+  hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdriveId }],
   workflows: [{ binding: "APP_WORKFLOWS", name: `${name}-workflows`, class_name: "AppWorkflows" }],
   r2_buckets: [{ binding: "APP_BUILDS", bucket_name: `${name}-builds` }],
   services: [
