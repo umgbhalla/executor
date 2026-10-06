@@ -2,7 +2,7 @@ import { hostedAppCapabilities } from "@executor-js/hosted-server/app-management
 import { executorSelfHostApiDocument } from "../contracts/api.ts";
 import { AppManagementHost } from "@executor-js/app-management";
 import { runStartupDataSteps } from "@executor-js/app-management/data-steps";
-import { hostedExecutorOrigin, remoteRegistry } from "@executor-js/app-registry";
+import { hostedExecutorOrigin, remoteRegistry, type Registry } from "@executor-js/app-registry";
 import { gitSourceStorage } from "@executor-js/app-source";
 import type { RepositoryBackend } from "@executor-js/app-source";
 /** Self-host SDK uses the same PGlite connection as Better Auth. */
@@ -41,6 +41,7 @@ export interface SelfHostPlatform {
   readonly repositories: RepositoryBackend;
   readonly runtime: AppRuntime;
   readonly workflows: WorkflowRuntime;
+  readonly registry?: Registry;
 }
 
 /** Private callback surface for app workflows, exposed only through a service binding. */
@@ -66,12 +67,20 @@ export const selfHostExecutorServices = <E, R>(
       const evaluation = yield* declarationConfig;
       const server = yield* Scope.Scope;
       const ready = yield* Deferred.make<Executor>();
-      const { runtime, workflows, blobs, repositories } = yield* acquire(Deferred.await(ready));
-      const registry = remoteRegistry(
-        yield* Config.String("EXECUTOR_REGISTRY_URL").pipe(
-          Config.withDefault(hostedExecutorOrigin),
-        ),
-      );
+      const {
+        runtime,
+        workflows,
+        blobs,
+        repositories,
+        registry: suppliedRegistry,
+      } = yield* acquire(Deferred.await(ready));
+      const registry =
+        suppliedRegistry ??
+        remoteRegistry(
+          yield* Config.String("EXECUTOR_REGISTRY_URL").pipe(
+            Config.withDefault(hostedExecutorOrigin),
+          ),
+        );
       const sources = gitSourceStorage(repositories);
       const executor = yield* postgresExecutor(
         key,

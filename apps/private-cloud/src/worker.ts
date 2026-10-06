@@ -1,6 +1,7 @@
 /** Private product composition. Hyperdrive owns SQL; this actor owns coordination. */
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import type { Artifacts, DurableObjectState } from "@cloudflare/workers-types";
+import { RegistryError } from "@executor-js/app-registry";
 import { prepareProduct, type ProductEnvironment } from "@executor-js/hosted-self-host/product";
 import { ConfigProvider, Effect, Exit, Redacted, Scope } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
@@ -90,6 +91,11 @@ export class ExecutorProduct extends DurableObject<Environment> {
                 runtime,
                 blobs: r2Blobs(this.env.APP_BUILDS),
                 workflows: privateWorkflows(this.env),
+                registry: {
+                  origin: this.env.BETTER_AUTH_URL,
+                  list: () => Effect.succeed([]),
+                  snapshot: () => Effect.fail(new RegistryError({ reason: "not-found" })),
+                },
               };
             }),
         }).pipe(
