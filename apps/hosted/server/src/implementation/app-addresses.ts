@@ -6,7 +6,11 @@ import { AppUiAddressInvalid, AppUiHostnameLabel, type AppUiBaseUrl } from "../c
 import { OrganizationSlug } from "../contracts/organization.ts";
 
 /** Hosted app.organization addresses resolve current names before authorizing immutable identities. */
-export const appAddresses = (dashboardOrigin: string, baseUrl: AppUiBaseUrl | undefined) => {
+export const appAddresses = (
+  dashboardOrigin: string,
+  baseUrl: AppUiBaseUrl | undefined,
+  hostnameMode?: "single-label",
+) => {
   const base = baseUrl === undefined ? undefined : new URL(baseUrl);
   const dashboardHost = new URL(dashboardOrigin).host;
   const origin = (app: Pick<App, "slug">, slug: OrganizationSlug) =>
@@ -24,7 +28,10 @@ export const appAddresses = (dashboardOrigin: string, baseUrl: AppUiBaseUrl | un
         ),
       );
       const url = new URL(base);
-      const hostname = `${labels.join(".")}.${base.hostname}`;
+      const label = `${app.slug.length.toString(36).padStart(2, "0")}-${labels.join("-")}--executor`;
+      if (hostnameMode === "single-label" && label.length > 63)
+        return yield* new AppUiAddressInvalid({ reason: "too_long" });
+      const hostname = `${hostnameMode === "single-label" ? label : labels.join(".")}.${base.hostname}`;
       url.hostname = hostname;
       if (url.hostname !== hostname)
         return yield* new AppUiAddressInvalid({ reason: "invalid_slug" });
@@ -42,7 +49,18 @@ export const appAddresses = (dashboardOrigin: string, baseUrl: AppUiBaseUrl | un
       !url.hostname.endsWith(suffix)
     )
       return Option.none();
-    const labels = url.hostname.slice(0, -suffix.length).split(".");
+    const prefix = url.hostname.slice(0, -suffix.length);
+    const labels = (() => {
+      if (hostnameMode !== "single-label") return prefix.split(".");
+      if (prefix.length > 63) return [];
+      const match = /^([0-9a-z]{2})-(.*)--executor$/.exec(prefix);
+      if (match === null) return [];
+      const length = Number.parseInt(match[1]!, 36);
+      if (match[1] !== length.toString(36).padStart(2, "0")) return [];
+      const names = match[2]!;
+      if (names[length] !== "-") return [];
+      return [names.slice(0, length), names.slice(length + 1)];
+    })();
     if (labels.length !== 2) return Option.none();
     return Option.flatMap(
       Schema.decodeUnknownOption(Schema.Array(AppUiHostnameLabel))(labels),

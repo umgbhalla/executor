@@ -62,6 +62,7 @@ export const selfHostRouteMap = <DashboardE, DashboardR, AuthE = never>(options:
   >;
   readonly skills: readonly SourceFile[];
   readonly egress: HostEgress;
+  readonly appHostnameMode?: "single-label";
   readonly executorServices: Layer.Layer<
     Layer.Success<ReturnType<typeof selfHostExecutorServices>>
   >;
@@ -98,7 +99,11 @@ export const selfHostRouteMap = <DashboardE, DashboardR, AuthE = never>(options:
         ? worker
         : worker.pipe(Effect.provideService(ScheduleObservation, analytics.schedules));
     }).pipe(Effect.provide(executorServices));
-    const addresses = appAddresses(auth.origin, yield* appUiBaseUrl(auth.origin));
+    const addresses = appAddresses(
+      auth.origin,
+      yield* appUiBaseUrl(auth.origin),
+      options.appHostnameMode,
+    );
     const appUi = hostedAppUi(addresses);
     const mcp = yield* selfHostMcp.pipe(Effect.provide(HttpServer.layerServices));
     const document = lazyHostedApiDocument(() => executorSelfHostApiDocument(auth.origin));
