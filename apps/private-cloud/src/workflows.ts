@@ -1,58 +1,34 @@
-/** Native checkpoints and timers; the private executor retains app and account authority. */
+/** Native workflow body; each product call ends before a timer or checkpoint waits. */
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { Workflow } from "@cloudflare/workers-types";
-import { Effect, Result, Schema } from "effect";
+import { Cause, Effect, Redacted, Result, Schema } from "effect";
 import {
-  type WorkflowFailure,
+  ResolvedAccounts,
   WorkflowRunId,
   WorkflowRpcResult,
   WorkflowStepOptions,
   WorkflowValue,
+  HostResponse,
   workflowDurationMillis,
+  type WorkflowExecution,
 } from "apps/contracts";
 import {
   WorkflowBackendState,
   decodeWorkflowFailure,
+  workflowFailureDetail,
   workflowFailureMessage,
-  type WorkflowDriver,
   type WorkflowRuntime,
 } from "@executor-js/sdk/core";
+import {
+  LoadedWorkerBuild,
+  PreparedWorkflow,
+  type WorkflowHostCommand,
+} from "@executor-js/sdk/workerd";
+import { makePrivateAppRunner, type AppEnvironment } from "./apps.ts";
 
-export interface WorkflowSteps {
-  do(
-    name: string,
-    options: WorkflowStepOptions,
-    run: () => Promise<typeof WorkflowRpcResult.Encoded>,
-  ): Promise<typeof WorkflowRpcResult.Encoded>;
-  sleep(name: string, duration: number | string): Promise<typeof WorkflowRpcResult.Encoded>;
-  sleepUntil(name: string, timestamp: number): Promise<typeof WorkflowRpcResult.Encoded>;
+interface WorkflowEnvironment extends AppEnvironment {
+  APP_WORKFLOW_HOST: { fetch(request: Request): Promise<Response> };
 }
-
-export const workflowReply = <A>(effect: Effect.Effect<A, WorkflowFailure>) =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.match({
-        onSuccess: (value) => ({ ok: true as const, value }),
-        onFailure: (error) => ({ ok: false as const, error }),
-      }),
-      Effect.flatMap(Schema.encodeUnknownEffect(WorkflowRpcResult)),
-    ),
-  );
-
-const settle = (work: () => Promise<typeof WorkflowRpcResult.Encoded>) =>
-  Effect.tryPromise({ try: work, catch: decodeWorkflowFailure }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(WorkflowRpcResult)),
-    Effect.mapError(decodeWorkflowFailure),
-    Effect.flatMap((reply) => (reply.ok ? Effect.succeed(reply.value) : Effect.fail(reply.error))),
-  );
-
-export const workflowDriver = (steps: WorkflowSteps): WorkflowDriver => ({
-  do: (name, options, run) => settle(() => steps.do(name, options, () => workflowReply(run()))),
-  sleep: (name, duration) => settle(() => steps.sleep(name, duration)).pipe(Effect.asVoid),
-  sleepUntil: (name, timestamp) =>
-    settle(() => steps.sleepUntil(name, timestamp)).pipe(Effect.asVoid),
-});
-
 interface NativeStep {
   do(
     name: string,
@@ -65,58 +41,154 @@ interface NativeStep {
   sleep(name: string, duration: number): Promise<void>;
   sleepUntil(name: string, timestamp: number): Promise<void>;
 }
+const hostRequest = (env: WorkflowEnvironment, command: WorkflowHostCommand) =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await env.APP_WORKFLOW_HOST.fetch(
+        new Request("https://workflow.internal/workflows", {
+          method: "POST",
+          body: JSON.stringify(command),
+        }),
+      );
+      if (response.status !== 200) throw new Error("Workflow host unavailable");
+      return response.json();
+    },
+    catch: decodeWorkflowFailure,
+  }).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(WorkflowRpcResult)),
+    Effect.mapError(decodeWorkflowFailure),
+    Effect.flatMap((reply) => (reply.ok ? Effect.succeed(reply.value) : Effect.fail(reply.error))),
+  );
 
-export class PrivateWorkflows extends WorkflowEntrypoint<
-  {
-    APP_WORKFLOW_HOST: {
-      executeWorkflow(run: string, steps: WorkflowSteps): Promise<typeof WorkflowRpcResult.Encoded>;
-    };
-  },
-  { run: string }
-> {
+export class AppWorkflows extends WorkflowEntrypoint<WorkflowEnvironment, { run: string }> {
   async run(event: Readonly<{ payload: { run: string } }>, nativeStep: unknown) {
-    const run = Schema.decodeUnknownSync(WorkflowRunId)(event.payload.run);
+    const env = this.env;
+    const runner = makePrivateAppRunner(env, this.ctx);
     const step = nativeStep as NativeStep;
     const { NonRetryableError } = await import("cloudflare:workflows");
-    const reply = <A>(work: () => Promise<A>) =>
-      workflowReply(Effect.tryPromise({ try: work, catch: decodeWorkflowFailure }));
+    const native = <A>(work: () => Promise<A>) =>
+      Effect.tryPromise({ try: work, catch: decodeWorkflowFailure });
     const duration = (value: number | string) => {
       const millis = workflowDurationMillis(value);
       if (millis === undefined) throw new NonRetryableError("Invalid workflow duration");
       return millis;
     };
-    const steps: WorkflowSteps = {
-      do: (name, rawOptions, work) =>
-        reply(async () => {
-          const options = Schema.decodeUnknownSync(WorkflowStepOptions)(rawOptions);
-          return step.do(
-            name,
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        const run = yield* Schema.decodeUnknownEffect(WorkflowRunId)(event.payload.run);
+        const prepared = yield* hostRequest(env, { operation: "prepare", run }).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(PreparedWorkflow)),
+        );
+        if (prepared.state === "complete") return prepared.output;
+        const { seed, accounts } = prepared;
+        const execution: WorkflowExecution = {
+          runId: seed.runId,
+          driver: {
+            do: (name, rawOptions, work) =>
+              native(async () => {
+                const options = Schema.decodeUnknownSync(WorkflowStepOptions)(rawOptions);
+                return step.do(
+                  name,
+                  {
+                    ...(options.retries === undefined
+                      ? {}
+                      : {
+                          retries: { ...options.retries, delay: duration(options.retries.delay) },
+                        }),
+                    ...(options.timeout === undefined
+                      ? {}
+                      : { timeout: duration(options.timeout) }),
+                  },
+                  () =>
+                    Effect.runPromise(
+                      work().pipe(
+                        Effect.catch((error) =>
+                          Effect.die(
+                            error.retryable
+                              ? new Error(workflowFailureMessage(error))
+                              : new NonRetryableError(workflowFailureMessage(error)),
+                          ),
+                        ),
+                      ),
+                    ),
+                );
+              }),
+            sleep: (name, value) => native(() => step.sleep(name, duration(value))),
+            sleepUntil: (name, timestamp) => native(() => step.sleepUntil(name, timestamp)),
+          },
+          resolve: () =>
+            hostRequest(env, { operation: "context", run }).pipe(
+              Effect.flatMap(Schema.decodeUnknownEffect(ResolvedAccounts)),
+              Effect.map((accounts) => ({ accounts: Redacted.make(accounts) })),
+              Effect.mapError(decodeWorkflowFailure),
+            ),
+          invoke: (input) => hostRequest(env, { operation: "invoke", run, ...input }),
+        };
+        const result = yield* runner
+          .invoke(
             {
-              ...(options.retries === undefined
-                ? {}
-                : { retries: { ...options.retries, delay: duration(options.retries.delay) } }),
-              ...(options.timeout === undefined ? {} : { timeout: duration(options.timeout) }),
+              app: seed.app,
+              build: seed.build,
+              database: false,
+              accounts,
+              command: { operation: "workflow-run", name: seed.name, input: seed.input },
+              headers: {},
             },
-            async () => {
-              const result = Schema.decodeUnknownSync(WorkflowRpcResult)(await work());
-              if (result.ok) return result.value;
-              const message = workflowFailureMessage(result.error);
-              throw result.error.retryable ? new Error(message) : new NonRetryableError(message);
+            {
+              load: () =>
+                Effect.runPromise(
+                  hostRequest(env, { operation: "load", run }).pipe(
+                    Effect.flatMap(Schema.decodeUnknownEffect(LoadedWorkerBuild)),
+                  ),
+                ),
+              elicit: null,
+              controls: (input) =>
+                Effect.runPromise(
+                  hostRequest(env, {
+                    operation: "control",
+                    run,
+                    command: Schema.decodeUnknownSync(Schema.Json)(input),
+                  }),
+                ),
+              workflow: execution,
             },
+          )
+          .pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(HostResponse)),
+            Effect.flatMap((reply) =>
+              reply.ok
+                ? Schema.decodeUnknownEffect(WorkflowValue)(reply.value).pipe(
+                    Effect.mapError(decodeWorkflowFailure),
+                  )
+                : Effect.fail(decodeWorkflowFailure(reply.error)),
+            ),
+            Effect.matchCause({
+              onSuccess: (output) => ({ ok: true as const, output }),
+              onFailure: (cause) => ({
+                ok: false as const,
+                error: decodeWorkflowFailure(Cause.squash(cause)),
+              }),
+            }),
           );
-        }),
-      sleep: (name, value) =>
-        reply(async () => {
-          await step.sleep(name, duration(value));
-          return null;
-        }),
-      sleepUntil: (name, timestamp) =>
-        reply(async () => {
-          await step.sleepUntil(name, timestamp);
-          return null;
-        }),
-    };
-    return Effect.runPromise(settle(() => this.env.APP_WORKFLOW_HOST.executeWorkflow(run, steps)));
+        if (!result.ok) {
+          if (result.error.reason !== "engine" || !result.error.retryable) {
+            const detail = workflowFailureDetail(result.error);
+            yield* hostRequest(env, {
+              operation: "finish",
+              run,
+              result: {
+                ok: false,
+                error: result.error.reason,
+                ...(detail === undefined ? {} : { detail }),
+              },
+            });
+          }
+          return yield* result.error;
+        }
+        yield* hostRequest(env, { operation: "finish", run, result });
+        return result.output;
+      }),
+    );
   }
 }
 

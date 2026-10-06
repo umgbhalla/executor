@@ -4,6 +4,7 @@ import type {
   ExecutionContext,
   Fetcher,
   R2Bucket,
+  Workflow,
   WorkerLoader,
   WebSocket,
 } from "@cloudflare/workers-types";
@@ -83,6 +84,7 @@ export interface AppEnvironment {
   APP_BUILDS: R2Bucket;
   APP_CREDENTIAL_KEY: string;
   APP_OUTBOUND: Fetcher;
+  APP_WORKFLOWS: Pick<Workflow<{ run: string }>, "get" | "create">;
 }
 
 type Callback = ((input: unknown) => Promise<unknown>) | null;
@@ -140,26 +142,30 @@ export class AppDataSupervisor extends Workers.DurableObject<AppEnvironment> {
   }
 }
 
+export const makePrivateAppRunner = (
+  env: AppEnvironment,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+) =>
+  makeAppRunner({
+    loader: env.APP_LOADER,
+    outbound,
+    credentialKey: credentialKey(env.APP_CREDENTIAL_KEY),
+    waitUntil: (task) => ctx.waitUntil(task),
+    data: (app) => {
+      const target = env.APP_DATA.getByName(app);
+      const attempt = <A>(work: () => Promise<A>) =>
+        Effect.tryPromise({ try: work, catch: (error) => error });
+      return {
+        invoke: (...args) => attempt(() => target.invoke(...args)),
+        cancel: (id) => attempt(() => target.cancel(id)),
+        cache: (namespace, command) => attempt(() => target.cache(namespace, command)),
+      };
+    },
+  });
+
 export class AppRunner extends Workers.WorkerEntrypoint<AppEnvironment> {
   private runner() {
-    return serveAppRunner(
-      makeAppRunner({
-        loader: this.env.APP_LOADER,
-        outbound,
-        credentialKey: credentialKey(this.env.APP_CREDENTIAL_KEY),
-        waitUntil: (task) => this.ctx.waitUntil(task),
-        data: (app) => {
-          const target = this.env.APP_DATA.getByName(app);
-          const attempt = <A>(work: () => Promise<A>) =>
-            Effect.tryPromise({ try: work, catch: (error) => error });
-          return {
-            invoke: (...args) => attempt(() => target.invoke(...args)),
-            cancel: (id) => attempt(() => target.cancel(id)),
-            cache: (namespace, command) => attempt(() => target.cache(namespace, command)),
-          };
-        },
-      }),
-    );
+    return serveAppRunner(makePrivateAppRunner(this.env, this.ctx));
   }
   invoke(input: string, capabilities: RemoteCapabilities) {
     return Effect.runPromise(this.runner().invoke(input, capabilities));
@@ -228,7 +234,7 @@ const dataChanges = (env: AppEnvironment, app: string) =>
     { bufferSize: 1, strategy: "sliding" },
   );
 
-export const privateApps = (env: AppEnvironment, _ctx: ExecutionContext) =>
+export const privateApps = (env: AppEnvironment) =>
   Effect.gen(function* () {
     const blobs = r2Blobs(env.APP_BUILDS);
     const remote = remoteAppRunner({
