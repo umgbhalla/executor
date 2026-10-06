@@ -4,19 +4,19 @@ import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context
 import type { BetterAuthPlugin, GenericEndpointContext } from "@better-auth/core";
 import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
-import { Config, Effect, Redacted } from "effect";
+import { Config, Effect, Redacted, Schema } from "effect";
 import { z } from "zod";
 
 export const privateOwnerId = "private-owner";
 export const privateOrganizationId = "private-executor";
 const enrollmentCookie = "executor-private-enrollment";
 const enrollmentSeconds = 300;
+class InvalidPairingKey extends Schema.TaggedError<InvalidPairingKey>()("InvalidPairingKey", {}) {}
 
 export const privateAuthSettings = Effect.gen(function* () {
   const base = yield* authSettings;
   const pairingKey = yield* Config.Redacted("EXECUTOR_PAIRING_KEY");
-  if (Redacted.value(pairingKey).length < 32)
-    return yield* Effect.fail(new Error("EXECUTOR_PAIRING_KEY needs at least 32 characters"));
+  if (Redacted.value(pairingKey).length < 32) return yield* Effect.fail(new InvalidPairingKey());
   return { ...base, pairingKey };
 });
 
