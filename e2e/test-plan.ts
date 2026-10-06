@@ -6,7 +6,7 @@ import type { Target } from "./report-model.ts";
 export const TargetPlan = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("scheduled"),
-    runtime: Schema.optional(Schema.Literals(["managed", "attached"])),
+    runtime: Schema.optional(Schema.Literals(["managed", "attached", "private"])),
   }),
   Schema.Struct({
     status: Schema.Literal("not-applicable"),
@@ -47,6 +47,17 @@ const cloudOnboarding = {
 
 /** Scenario names and applicability used by both test declarations and test selection. */
 export const scenarios = {
+  privateOwnerAuth: {
+    file: "private-auth.spec.ts",
+    title: "private owner pairing admits multiple verified passkeys and expiring pinned agent keys",
+    targets: {
+      cloud: { status: "scheduled", runtime: "private" },
+      "self-host": na(
+        "Private Cloudflare owner policy is not part of the public self-host product.",
+      ),
+      local: na("Local device pairing does not use private hosted passkeys."),
+    },
+  },
   appWorkerBudget: {
     fixtures: "actors",
     file: "app-worker-budget.spec.ts",
@@ -4123,7 +4134,7 @@ export const scenarios = {
 /** Hosted parity includes every scenario scheduled on both hosted products. */
 export const scenariosForSuite = (
   suite: "all" | "hosted",
-  cloudMode: "managed" | "attached" = "managed",
+  cloudMode: "managed" | "attached" | "private" = "managed",
 ) =>
   Object.values(scenarios)
     .filter(
@@ -4141,7 +4152,9 @@ export const scenariosForSuite = (
               cloud: na(
                 scenario.targets.cloud.runtime === "managed"
                   ? "Requires the managed local Cloud target and its local collectors."
-                  : "Requires a deployed Cloud target with Cloudflare's memory limit.",
+                  : scenario.targets.cloud.runtime === "private"
+                    ? "Requires an attached private Cloudflare Executor stage."
+                    : "Requires a deployed Cloud target with Cloudflare's memory limit.",
               ),
             },
           }
@@ -4152,7 +4165,7 @@ export const scenariosForSuite = (
 export const filesForTarget = (
   target: typeof Target.Type,
   suite: "all" | "hosted",
-  cloudMode: "managed" | "attached" = "managed",
+  cloudMode: "managed" | "attached" | "private" = "managed",
   filter = "",
 ) => [
   ...new Set(
@@ -4171,7 +4184,7 @@ export const patternForTarget = (
   target: typeof Target.Type,
   suite: "all" | "hosted",
   filter: string,
-  cloudMode: "managed" | "attached" = "managed",
+  cloudMode: "managed" | "attached" | "private" = "managed",
 ): string => {
   const selected = new RegExp(filter);
   const titles = scenariosForSuite(suite, cloudMode)

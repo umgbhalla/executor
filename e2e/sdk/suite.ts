@@ -67,21 +67,32 @@ export const runSuite = ({
           : selected === "hosted"
             ? (["self-host", "cloud"] as const)
             : [selected];
+      const privateCloud = yield* Config.String("E2E_PRIVATE_CLOUD_URL").pipe(Config.option);
+      if (Option.isSome(privateCloud) && (selected !== "cloud" || attachment !== undefined))
+        return yield* new RunFailed({
+          message: "E2E_PRIVATE_CLOUD_URL requires --target cloud without an SDK attachment.",
+        });
       const cloud =
         attachment !== undefined
           ? Option.some(attachment.origin)
-          : targets.includes("cloud")
-            ? yield* Config.String("E2E_CLOUD_URL").pipe(
-                Config.option,
-                Effect.flatMap(
-                  Option.match({
-                    onNone: () => Effect.succeed(Option.none<string>()),
-                    onSome: (origin) =>
-                      Schema.decodeUnknownEffect(CloudOrigin)(origin).pipe(Effect.map(Option.some)),
-                  }),
-                ),
+          : Option.isSome(privateCloud)
+            ? yield* Schema.decodeUnknownEffect(CloudOrigin)(privateCloud.value).pipe(
+                Effect.map(Option.some),
               )
-            : Option.none<string>();
+            : targets.includes("cloud")
+              ? yield* Config.String("E2E_CLOUD_URL").pipe(
+                  Config.option,
+                  Effect.flatMap(
+                    Option.match({
+                      onNone: () => Effect.succeed(Option.none<string>()),
+                      onSome: (origin) =>
+                        Schema.decodeUnknownEffect(CloudOrigin)(origin).pipe(
+                          Effect.map(Option.some),
+                        ),
+                    }),
+                  ),
+                )
+              : Option.none<string>();
       const interactive = yield* Config.Boolean("E2E_INTERACTIVE").pipe(Config.withDefault(false));
       const observeUI = yield* Config.Boolean("E2E_UI_OBSERVE").pipe(Config.withDefault(false));
       if (observeUI && (selected !== "cloud" || Option.isSome(cloud)))
@@ -114,7 +125,11 @@ export const runSuite = ({
         (yield* processes.string(ChildProcess.make("git", ["status", "--porcelain"]))).trim()
           .length > 0;
       const startedAt = new Date().toISOString();
-      const cloudMode = Option.isSome(cloud) ? "attached" : "managed";
+      const cloudMode = Option.isSome(privateCloud)
+        ? "private"
+        : Option.isSome(cloud)
+          ? "attached"
+          : "managed";
       const plan = scenariosForSuite(selected === "hosted" ? "hosted" : "all", cloudMode);
       const filter = yield* Effect.try({
         try: () => new RegExp(name),
@@ -255,6 +270,13 @@ export const runSuite = ({
                           ...(process.env.E2E_CLAUDE_API_KEY === undefined
                             ? {}
                             : { E2E_CLAUDE_API_KEY: process.env.E2E_CLAUDE_API_KEY }),
+                          ...(cloudMode === "private" &&
+                          process.env.EXECUTOR_PRIVATE_E2E_PAIRING_KEY !== undefined
+                            ? {
+                                EXECUTOR_PRIVATE_E2E_PAIRING_KEY:
+                                  process.env.EXECUTOR_PRIVATE_E2E_PAIRING_KEY,
+                              }
+                            : {}),
                           ...(attachment !== undefined
                             ? { E2E_EMULATORS: attachment.emulators }
                             : environment === undefined

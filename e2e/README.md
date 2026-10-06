@@ -708,6 +708,13 @@ Run it alone with `bun run e2e:deployed --test-name 'Cloud compiler memory failu
 The default deployed filter excludes it because exhausting the shared compiler
 can interrupt other scenarios' builds.
 
+The private Executor auth scenario uses a disposable private Cloudflare stage.
+Set `E2E_PRIVATE_CLOUD_URL` to its exact HTTPS origin and
+`EXECUTOR_PRIVATE_E2E_PAIRING_KEY` to its manual pairing key, then run
+`bun run e2e:cloud --test-name 'private owner pairing admits multiple verified passkeys'`.
+The scenario adds passkeys and agent keys to that stage. Ordinary Cloud runs do
+not select it.
+
 The deployed job runs after the functional checks on `main`. PRs run the emulated Cloud target.
 Main and manual deployed CI jobs share one non-cancelling concurrency group;
 scenario workers remain parallel within each job. Agents can still run targeted

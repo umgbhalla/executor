@@ -8,7 +8,7 @@ const directory = process.env.EXECUTOR_E2E_RUN;
 if (!directory) throw new Error("Use bun run e2e to start an isolated target first.");
 const target = Schema.decodeUnknownSync(Target)(process.env.E2E_TARGET);
 const suite = Schema.decodeUnknownSync(Schema.Literals(["all", "hosted"]))(process.env.E2E_SUITE);
-const cloudMode = Schema.decodeUnknownSync(Schema.Literals(["managed", "attached"]))(
+const cloudMode = Schema.decodeUnknownSync(Schema.Literals(["managed", "attached", "private"]))(
   process.env.E2E_CLOUD_MODE,
 );
 export default defineConfig({
