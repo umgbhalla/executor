@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { authOptions, authSettings } from "@executor-js/hosted-server";
 import { passkey } from "@better-auth/passkey";
 import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context";
@@ -39,9 +40,7 @@ const matchesKey = async (expected: string, supplied: string) => {
   const digest = async (value: string) =>
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
   const [left, right] = await Promise.all([digest(expected), digest(supplied)]);
-  let difference = 0;
-  for (let index = 0; index < left.length; index++) difference |= left[index]! ^ right[index]!;
-  return difference === 0;
+  return timingSafeEqual(left, right);
 };
 
 const pairing = (settings: Effect.Success<typeof privateAuthSettings>) =>
