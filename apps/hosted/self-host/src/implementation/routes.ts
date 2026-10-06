@@ -55,6 +55,7 @@ import type { SourceFile } from "@executor-js/sdk/core";
 import type { selfHostExecutorServices } from "./executor-services.ts";
 /** Compose the self-host route map without opening a listener; shared by the process entry and HTTP tests. */
 export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
+  readonly auth?: typeof selfHostAuth;
   readonly skills: readonly SourceFile[];
   readonly egress: HostEgress;
   readonly executorServices: Layer.Layer<
@@ -64,7 +65,7 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
 }) =>
   Effect.gen(function* () {
     const { skills, egress, executorServices, dashboard } = options;
-    const auth = yield* selfHostAuth;
+    const auth = yield* options.auth ?? selfHostAuth;
     const analytics = yield* selfHostAnalytics;
     /** Requests and background schedules record through this instance's sink unless it opted out. */
     const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>

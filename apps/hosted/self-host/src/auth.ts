@@ -1,7 +1,8 @@
 import { selfHostAuthOptions, selfHostAuthSettings } from "./implementation/auth-options.ts";
 import { selfHostRegistration, selfHostUserHooks } from "./implementation/registration.ts";
 /** Better Auth over the host's shared, persisted PGlite database. */
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { authOptions, authSettings } from "@executor-js/hosted-server";
 import { HostedAppSessions, hostedAppSessions } from "@executor-js/hosted-server/app-ui";
 import {
   McpAuthentication,
@@ -25,109 +26,121 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 /** Initialize auth before listening; the database owns persistent users and sessions. */
 export const selfHostAuth = Effect.gen(function* () {
   const settings = yield* selfHostAuthSettings;
-  const database = yield* AuthDatabase;
   const base = selfHostAuthOptions(settings, ["x-executor-client-ip"]);
-  const options = {
+  return yield* initializeHostedAuth(settings, {
     ...base,
     plugins: [...base.plugins, selfHostRegistration(settings)],
     databaseHooks: selfHostUserHooks(settings),
-    database,
-    secret: Redacted.value(settings.secret),
-  };
-  const auth = betterAuth(options);
-  const context = yield* Effect.tryPromise({
-    try: () => auth.$context,
-    catch: () => new AuthenticationUnavailable(),
   });
-  yield* provisionHostedOAuthResources(settings.url, context).pipe(
-    Effect.mapError(() => new AuthenticationUnavailable()),
-  );
-  const identity = Layer.succeed(Authentication, {
-    origin: settings.url,
-    oauthRedirectUri: Option.getOrUndefined(settings.oauthRedirectUri),
-    current: (headers) =>
-      Effect.tryPromise({
-        try: () =>
-          auth.api.getSession({
-            headers,
-            query: { disableRefresh: true, disableCookieCache: true },
-          }),
-        catch: () => new AuthenticationUnavailable(),
-      })
-        .pipe(Effect.flatMap(sessionPrincipal))
-        .pipe(Effect.withSpan("auth.current")),
-    organization: (reference) => resolveOrganizationReference(context.adapter, reference),
-    organizationSlug: (headers, organizationId) =>
-      lookupOrganizationSlug(() =>
-        auth.api.getOrganization({ headers, query: { organizationId } }),
-      ).pipe(Effect.withSpan("auth.organizationSlug")),
-    membership: (principal, organizationId) =>
-      lookupMembership(context.adapter, principal, organizationId).pipe(
-        Effect.withSpan("auth.membership"),
-      ),
-    removeOrganization: (organizationId) =>
-      deleteOrganizationRecords(context.adapter, organizationId).pipe(
-        Effect.withSpan("auth.removeOrganization"),
-      ),
-  });
-  const mcpIdentity = Layer.succeed(McpAuthentication, {
-    origin: settings.url,
-    authenticate: (headers, mode, organization) =>
-      Effect.tryPromise({
-        try: () => auth.api.getMcpAccess({ headers, query: { mode, organization } }),
-        catch: mcpAuthenticationError,
-      }).pipe(Effect.withSpan("auth.authenticate")),
-    browserGrant: (headers, id) =>
-      Effect.tryPromise({
-        try: () => auth.api.getMcpBrowserAccess({ headers, body: { id } }),
-        catch: mcpAuthenticationError,
-      }),
-    metadata: Effect.tryPromise({
-      try: () => auth.api.getOAuthServerConfig(),
-      catch: () => new AuthenticationUnavailable(),
-    }),
-    connections: mcpConnectionStore((run) =>
-      Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
-    ),
-  });
-  const apiIdentity = Layer.succeed(ApiAuthentication, {
-    origin: settings.url,
-    authenticate: (headers, organization) =>
-      Effect.tryPromise({
-        try: () => auth.api.getApiAccess({ headers, query: { organization } }),
-        catch: apiAuthenticationError,
-      }).pipe(Effect.withSpan("auth.authenticate")),
-  });
-  const handler = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const incoming = yield* HttpServerRequest.toWeb(request);
-    const web = new Request(incoming, { headers: new Headers(incoming.headers) });
-    // The socket address is trusted. Never accept a client-supplied forwarding header.
-    web.headers.delete("x-executor-client-ip");
-    if (Option.isSome(request.remoteAddress))
-      web.headers.set("x-executor-client-ip", request.remoteAddress.value);
-    const response = yield* Effect.tryPromise({
-      try: () => auth.handler(web),
+});
+
+/** Each product owns its admission policy; protocol identity stays shared. */
+export const initializeHostedAuth = (
+  settings: Effect.Success<typeof authSettings>,
+  options: BetterAuthOptions,
+) =>
+  Effect.gen(function* () {
+    const database = yield* AuthDatabase;
+    const auth = betterAuth({
+      ...options,
+      // Products retain the shared protocol plugins while replacing admission plugins.
+      plugins: options.plugins as ReturnType<typeof authOptions>["plugins"],
+      database,
+      secret: Redacted.value(settings.secret),
+    });
+    const context = yield* Effect.tryPromise({
+      try: () => auth.$context,
       catch: () => new AuthenticationUnavailable(),
     });
-    return HttpServerResponse.fromWeb(response).pipe(
-      HttpServerResponse.setHeader("cache-control", "no-store"),
+    yield* provisionHostedOAuthResources(settings.url, context).pipe(
+      Effect.mapError(() => new AuthenticationUnavailable()),
     );
-  }).pipe(
-    Effect.catchTag("AuthenticationUnavailable", () =>
-      Effect.succeed(HttpServerResponse.empty({ status: 503 })),
-    ),
-  );
-  const appSessions = Layer.succeed(
-    HostedAppSessions,
-    hostedAppSessions(context, globalThis.crypto),
-  );
-  return {
-    identity,
-    mcpIdentity,
-    apiIdentity,
-    appSessions,
-    origin: settings.url,
-    handler,
-  };
-});
+    const identity = Layer.succeed(Authentication, {
+      origin: settings.url,
+      oauthRedirectUri: Option.getOrUndefined(settings.oauthRedirectUri),
+      current: (headers) =>
+        Effect.tryPromise({
+          try: () =>
+            auth.api.getSession({
+              headers,
+              query: { disableRefresh: true, disableCookieCache: true },
+            }),
+          catch: () => new AuthenticationUnavailable(),
+        })
+          .pipe(Effect.flatMap(sessionPrincipal))
+          .pipe(Effect.withSpan("auth.current")),
+      organization: (reference) => resolveOrganizationReference(context.adapter, reference),
+      organizationSlug: (headers, organizationId) =>
+        lookupOrganizationSlug(() =>
+          auth.api.getOrganization({ headers, query: { organizationId } }),
+        ).pipe(Effect.withSpan("auth.organizationSlug")),
+      membership: (principal, organizationId) =>
+        lookupMembership(context.adapter, principal, organizationId).pipe(
+          Effect.withSpan("auth.membership"),
+        ),
+      removeOrganization: (organizationId) =>
+        deleteOrganizationRecords(context.adapter, organizationId).pipe(
+          Effect.withSpan("auth.removeOrganization"),
+        ),
+    });
+    const mcpIdentity = Layer.succeed(McpAuthentication, {
+      origin: settings.url,
+      authenticate: (headers, mode, organization) =>
+        Effect.tryPromise({
+          try: () => auth.api.getMcpAccess({ headers, query: { mode, organization } }),
+          catch: mcpAuthenticationError,
+        }).pipe(Effect.withSpan("auth.authenticate")),
+      browserGrant: (headers, id) =>
+        Effect.tryPromise({
+          try: () => auth.api.getMcpBrowserAccess({ headers, body: { id } }),
+          catch: mcpAuthenticationError,
+        }),
+      metadata: Effect.tryPromise({
+        try: () => auth.api.getOAuthServerConfig(),
+        catch: () => new AuthenticationUnavailable(),
+      }),
+      connections: mcpConnectionStore((run) =>
+        Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
+      ),
+    });
+    const apiIdentity = Layer.succeed(ApiAuthentication, {
+      origin: settings.url,
+      authenticate: (headers, organization) =>
+        Effect.tryPromise({
+          try: () => auth.api.getApiAccess({ headers, query: { organization } }),
+          catch: apiAuthenticationError,
+        }).pipe(Effect.withSpan("auth.authenticate")),
+    });
+    const handler = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const incoming = yield* HttpServerRequest.toWeb(request);
+      const web = new Request(incoming, { headers: new Headers(incoming.headers) });
+      // The socket address is trusted. Never accept a client-supplied forwarding header.
+      web.headers.delete("x-executor-client-ip");
+      if (Option.isSome(request.remoteAddress))
+        web.headers.set("x-executor-client-ip", request.remoteAddress.value);
+      const response = yield* Effect.tryPromise({
+        try: () => auth.handler(web),
+        catch: () => new AuthenticationUnavailable(),
+      });
+      return HttpServerResponse.fromWeb(response).pipe(
+        HttpServerResponse.setHeader("cache-control", "no-store"),
+      );
+    }).pipe(
+      Effect.catchTag("AuthenticationUnavailable", () =>
+        Effect.succeed(HttpServerResponse.empty({ status: 503 })),
+      ),
+    );
+    const appSessions = Layer.succeed(
+      HostedAppSessions,
+      hostedAppSessions(context, globalThis.crypto),
+    );
+    return {
+      identity,
+      mcpIdentity,
+      apiIdentity,
+      appSessions,
+      origin: settings.url,
+      handler,
+    };
+  });

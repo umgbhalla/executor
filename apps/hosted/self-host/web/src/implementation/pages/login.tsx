@@ -1,3 +1,4 @@
+import { PrivateLoginPage } from "./private-login.tsx";
 import { usePageUrl } from "@executor-js/dashboard-start/page";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AuthFailed, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
@@ -44,6 +45,8 @@ export function SelfHostLoginPage({ redirect, error: callbackError }: LoginProps
         </Button>
       </div>
     );
+  if (AsyncResult.isSuccess(config) && config.value.private)
+    return <PrivateLoginPage redirect={redirect} />;
   if (signedIn)
     return (
       <ContinueAfterSignIn

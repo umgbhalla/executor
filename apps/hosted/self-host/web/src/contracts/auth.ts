@@ -9,7 +9,11 @@ import { invalidate } from "@executor-js/ui/contracts/mutations";
 /** Self-host sign-in methods do not expose the shared organization's native client. */
 const authClient = createAuthClient({ ...dashboardAuthClientOptions });
 
-const Configuration = Schema.Struct({ setup: Schema.Boolean, sso: Schema.Boolean });
+const Configuration = Schema.Struct({
+  setup: Schema.Boolean,
+  sso: Schema.Boolean,
+  private: Schema.optional(Schema.Boolean),
+});
 
 /**
  * The server exposes only setup availability and whether the operator enabled SSO. It arrives
