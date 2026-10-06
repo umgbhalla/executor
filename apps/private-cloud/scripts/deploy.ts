@@ -1,7 +1,7 @@
 /** Deploy a disposable stage by default; --production attaches the owner domain. */
 import { createHmac } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -87,8 +87,17 @@ const productConfig = {
   routes: production ? [{ pattern: "executor.umgbhalla.com", custom_domain: true }] : [],
   assets: { directory: "./web", binding: "ASSETS", run_worker_first: true },
   rules: [
-    { type: "CompiledWasm", globs: ["**/*.wasm"] },
-    { type: "Data", globs: ["**/*.data"] },
+    {
+      type: "CompiledWasm",
+      globs: [
+        "modules/pglite.wasm",
+        "modules/initdb.wasm",
+        "modules/plpgsql.wasm",
+        "modules/pg-callback-*.wasm",
+      ],
+      fallthrough: false,
+    },
+    { type: "Data", globs: ["modules/pglite.data"], fallthrough: false },
   ],
   find_additional_modules: true,
   base_dir: ".",
@@ -120,7 +129,13 @@ const compilerConfig = {
   main: "./compiler.mjs",
   workers_dev: false,
   compatibility_flags: ["nodejs_compat"],
-  rules: [{ type: "CompiledWasm", globs: ["**/*.wasm"] }],
+  rules: [
+    {
+      type: "CompiledWasm",
+      globs: ["modules/esbuild.wasm", "modules/tailwindcss_oxide_bg.wasm"],
+      fallthrough: false,
+    },
+  ],
   find_additional_modules: true,
   base_dir: ".",
   preserve_file_names: true,
@@ -128,7 +143,7 @@ const compilerConfig = {
 const outboundConfig = {
   ...common,
   name: outbound,
-  main: "./outbound.mjs",
+  main: "./outbound/index.mjs",
   workers_dev: false,
   compatibility_flags: ["global_fetch_strictly_public"],
 };
@@ -148,8 +163,9 @@ if (stage && !process.argv.includes("--dry-run")) {
     throw new Error(`Cannot inspect stage R2 bucket (${existing.status})`);
   }
 }
+await mkdir(path.join(output, "outbound"), { recursive: true });
 await writeFile(
-  path.join(output, "outbound.mjs"),
+  path.join(output, "outbound/index.mjs"),
   "export default { fetch(request) { return fetch(request); } };\n",
 );
 const ephemeral = await mkdtemp(path.join(os.tmpdir(), "executor-private-deploy-"));
