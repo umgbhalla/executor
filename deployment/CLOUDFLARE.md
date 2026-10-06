@@ -23,6 +23,12 @@ serve the registry contract.
 
 ## Current deployment status
 
+The accepted single-owner, paired-passkey scope and current account checks are
+recorded in [private deployment requirements](PRIVATE.md). On 2026-10-06 a scoped
+deployment token was created and verified, and the private R2 bucket
+`executor-private-builds` was created and read back. The PostgreSQL WebAssembly
+memory blocker remains. No private service or DNS record has been created.
+
 The source already supports self-hosting with one persistent Docker volume.
 It does not yet provide a tested, private Cloudflare-only deployment.
 Do not run `hosted:cloud:deploy` for this goal: that selects the SaaS stack.
@@ -107,8 +113,10 @@ Cloud SaaS does not give it the private product's password and setup flows.
 | Backup destination and restore procedure      | Recover private state and keys                               |
 
 Cloudflare service access, storage/runtime limits and pricing must be checked for
-our chosen design before deployment. No account or domain has been selected yet.
-No cloud resources have been created by this preparation.
+our chosen design before deployment. The account used by `abdw` and the proposed
+dashboard origin `https://executor.umgbhalla.com` have now been selected. See
+[the current preparation receipt](PRIVATE.md#deployment-findings-2026-10-06)
+for credential and storage checks. The service is not deployed.
 
 ## Existing self-host build and local validation
 
@@ -142,4 +150,4 @@ The fork preparation passed `bun install --frozen-lockfile` with Bun 1.4.2,
 and `git diff --check`. The upstream Effect compiler emitted warnings; the check
 exited successfully. No application behavior changed in this preparation.
 No browser, MCP or restart-persistence scenario has been run on Cloudflare.
-The account, domain and durable private runtime remain open deployment work.
+The durable private runtime and deployed acceptance checks remain open work.
