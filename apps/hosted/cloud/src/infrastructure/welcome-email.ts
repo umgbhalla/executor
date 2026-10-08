@@ -1,5 +1,6 @@
 import { PgClient } from "@effect/sql-pg";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import { HttpServerResponse } from "effect/http";
 import { cloudDatabaseConnection } from "./database.ts";
 import { deliverWelcomeEmails } from "../implementation/welcome-emails.ts";
@@ -11,6 +12,7 @@ import { unsubscribeHandler, unsubscribeLinks } from "../implementation/email-pr
 /** The cron invocation owns its database connection and closes it after the batch. */
 export const cloudWelcomeEmails = (send: SendWelcomeEmail) =>
   Effect.gen(function* () {
+    const privateMode = Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie));
     const connection = yield* cloudDatabaseConnection;
     const origin = yield* cloudOrigin.pipe(Effect.orDie);
     const secrets = yield* cloudSecrets.pipe(Effect.orDie);
@@ -20,17 +22,19 @@ export const cloudWelcomeEmails = (send: SendWelcomeEmail) =>
       ),
     );
     const deliverUser = (user?: string) =>
-      Effect.scoped(
-        deliverWelcomeEmails(
-          send,
-          (id, email) =>
-            secrets.authSecret.pipe(
-              Effect.flatMap((secret) => unsubscribeLinks(origin, secret, id, email)),
-            ),
-          origin,
-          user,
-        ).pipe(Effect.provide(database)),
-      );
+      privateMode
+        ? Effect.void
+        : Effect.scoped(
+            deliverWelcomeEmails(
+              send,
+              (id, email) =>
+                secrets.authSecret.pipe(
+                  Effect.flatMap((secret) => unsubscribeLinks(origin, secret, id, email)),
+                ),
+              origin,
+              user,
+            ).pipe(Effect.provide(database)),
+          );
     return {
       deliver: deliverUser().pipe(
         Effect.catch(() => Effect.logError("Welcome email queue processing failed")),
