@@ -1,3 +1,6 @@
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { singleOwnerConfigurationAtom } from "../../contracts/auth.ts";
 import { Link } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CreditCardIcon } from "@hugeicons/core-free-icons";
@@ -13,6 +16,8 @@ export function CloudNavigation({
   readonly organizationSlug?: string;
   readonly pendingPage?: string;
 }) {
+  const configuration = useAtomValue(singleOwnerConfigurationAtom);
+  if (!AsyncResult.isSuccess(configuration) || configuration.value.enabled) return null;
   const content = (
     <>
       <HugeiconsIcon icon={CreditCardIcon} strokeWidth={2} size={16} aria-hidden />

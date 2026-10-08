@@ -1,3 +1,5 @@
+import { singleOwnerConfigurationAtom } from "../../contracts/auth.ts";
+import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import { PageSkeleton, DetailSkeleton } from "@executor-js/ui/dashboard/loading";
 import { AsyncResult } from "effect/reactivity";
 import { Alert, AlertDescription } from "@executor-js/ui/components/alert";
@@ -284,6 +286,17 @@ function BillingFailure({ retry }: { readonly retry?: (() => void) | undefined }
 /** Members never fetch billing; the backend independently enforces the same rule. */
 export function BillingPage({ returned, onCheckoutSettled }: BillingProps) {
   const organization = useOrganizationRoute();
+  const configuration = useAtomValue(singleOwnerConfigurationAtom);
+  if (AsyncResult.isFailure(configuration))
+    return <p role="alert">Unable to load access settings.</p>;
+  if (!AsyncResult.isSuccess(configuration)) return <PageSkeleton title="Billing" />;
+  if (configuration.value.enabled)
+    return (
+      <PageFrame>
+        <PageHeader title="Billing" />
+        <p>Billing is not used for this private instance.</p>
+      </PageFrame>
+    );
   if (organization.role === undefined) return <PageSkeleton title="Billing" />;
   if (organization.role === "member")
     return (
