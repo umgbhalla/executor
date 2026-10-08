@@ -25,7 +25,12 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
                 ...(data === undefined ? {} : { data }),
               })
               .then((response) =>
-                response.json().then((body) => ({ status: response.status(), body })),
+                response
+                  .text()
+                  .then((body) => ({
+                    status: response.status(),
+                    body: body ? JSON.parse(body) : null,
+                  })),
               ),
           );
         yield* browser.omitNetworkTrace;
@@ -38,17 +43,46 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
             key: "invalid-key-that-cannot-pair-this-browser",
           })).status,
         ).toBe(403);
-        for (const path of [
-          "/sign-up/email",
-          "/sign-in/email",
-          "/sign-in/social",
-          "/organization/create",
-          "/organization/invite-member",
-        ]) {
-          expect((yield* request("Reject additional account admission", path, {})).status).toBe(
-            403,
-          );
+        const deniedAdmissions = [
+          {
+            path: "/sign-up/email",
+            body: {
+              name: "Another owner",
+              email: "another@example.com",
+              password: "synthetic-password-for-e2e",
+            },
+          },
+          {
+            path: "/sign-in/email",
+            body: { email: "another@example.com", password: "synthetic-password-for-e2e" },
+          },
+          { path: "/sign-in/social", body: { provider: "google", callbackURL: `${origin}/` } },
+          {
+            path: "/organization/create",
+            body: { name: "Second organization", slug: "second-organization" },
+          },
+          {
+            path: "/organization/invite-member",
+            body: {
+              email: "another@example.com",
+              role: "member",
+              organizationId: "private-executor",
+            },
+          },
+        ];
+        for (const admission of deniedAdmissions) {
+          expect(
+            (yield* request("Reject additional account admission", admission.path, admission.body))
+              .status,
+          ).toBe(403);
         }
+        expect(
+          (yield* request(
+            "Email-code provider is not installed",
+            "/email-otp/send-verification-otp",
+            { email: "another@example.com", type: "sign-in" },
+          )).status,
+        ).toBe(404);
         expect(
           (yield* request("Reject unpaired enrollment", "/passkey/generate-register-options"))
             .status,
