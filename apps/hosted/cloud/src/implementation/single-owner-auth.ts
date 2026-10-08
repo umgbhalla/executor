@@ -246,6 +246,7 @@ export const singleOwnerAuthOptions = (settings: Settings, ipAddressHeaders: str
           ![
             "/organization/list",
             "/organization/get-full-organization",
+            "/organization/get-organization",
             "/organization/set-active",
             "/organization/list-members",
             "/organization/get-active-member",
