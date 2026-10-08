@@ -58,9 +58,9 @@ through the deployment environment. This mode requires a fresh database.
 
 This branch retains upstream's Alchemy infrastructure and database adapter.
 The Cloud production stack provisions PlanetScale PostgreSQL and uses its
-existing Axiom, Autumn, Context and Cloudflare email services. Those provider
-settings are still required; this auth change does not replace them. Set
-`BETTER_AUTH_URL=https://executor.umgbhalla.com` in the private deployment
+native Cloudflare logs in single-owner mode. Billing, company lookup and
+email delivery are disabled in this mode. Set
+`BETTER_AUTH_URL=https://ev2.umgbhalla.com` in the private deployment
 environment and use `bun run --cwd apps/hosted/cloud deploy --stage v2`.
 
 Run the isolated scenario with
