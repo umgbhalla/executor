@@ -200,7 +200,7 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
           ).toBe(200);
         }
         yield* browser.use("Owner apps page finishes loading", (page) =>
-          page.getByRole("heading", { name: "Apps", exact: true }).waitFor(),
+          page.getByRole("heading", { name: /^Apps\b/ }).waitFor(),
         );
         expect(
           yield* browser.use("No denied organization card", (page) =>
