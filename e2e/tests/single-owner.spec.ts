@@ -32,7 +32,20 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
               ),
           );
         yield* browser.omitNetworkTrace;
-        yield* browser.use("Open owner login", (page) => page.goto("/login"));
+        const entry = yield* browser.use("Private root redirects to owner login", (page) =>
+          page
+            .context()
+            .request.get("/", { maxRedirects: 0 })
+            .then((response) => ({
+              status: response.status(),
+              location: response.headers()["location"],
+            })),
+        );
+        expect(entry).toEqual({ status: 302, location: "/login" });
+        yield* browser.use("Open private root", (page) => page.goto("/"));
+        yield* browser.use("Root enters owner login", (page) =>
+          page.waitForURL((url) => url.pathname === "/login"),
+        );
         expect(
           (yield* request("Read single-owner policy", "/single-owner/config")).body.enabled,
         ).toBe(true);
@@ -170,6 +183,10 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         const current = (yield* request("Read sole owner session", "/get-session")).body;
         expect(current.user.id).toBe("private-owner");
         expect(current.session.activeOrganizationId).toBe("private-executor");
+        yield* browser.use("Signed owner opens private root", (page) => page.goto("/"));
+        yield* browser.use("Root enters sole owner apps", (page) =>
+          page.waitForURL((url) => /^\/org\/[^/]+\/apps$/.test(url.pathname)),
+        );
         yield* browser.use("Drop expired pairing authority after owner login", (page) =>
           page.context().clearCookies({ name: "executor-private-enrollment" }),
         );

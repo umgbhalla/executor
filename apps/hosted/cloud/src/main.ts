@@ -57,7 +57,8 @@ import { cloudSiteAssets } from "./infrastructure/site-assets.ts";
 import { retainedAssetFolders } from "./contracts/retained-assets.ts";
 import * as Output from "alchemy/Output";
 import { AlchemyContext } from "alchemy/AlchemyContext";
-import { Config, Effect, Layer, Path, Ref } from "effect";
+import { Config, Effect, Layer, Option, Path, Ref } from "effect";
+import { singleOwnerPairingKey } from "./implementation/single-owner-auth.ts";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { cloudAuth } from "./infrastructure/auth.ts";
 import { cloudOnboarding } from "./infrastructure/onboarding.ts";
@@ -183,6 +184,7 @@ export default Api.make(
     };
   }),
   Effect.gen(function* () {
+    const privateMode = Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie));
     const lifetime = yield* previewLifetime;
     const analytics = yield* cloudAnalytics;
     const reportErrors = yield* cloudSentry;
@@ -462,7 +464,18 @@ export default Api.make(
       HttpRouter.add("*", "/api/:channel/*", analytics.proxy),
       HttpRouter.add("POST", "/api/:channel/submit", errorTunnel),
       browserTelemetry.pipe(HttpRouter.provideRequest(auth.identity)),
-      HttpRouter.add("GET", "/", homepage(auth.cookiePrefix, analytics.hero, dashboard(null))),
+      HttpRouter.add(
+        "GET",
+        "/",
+        privateMode
+          ? Effect.succeed(
+              HttpServerResponse.redirect("/login", {
+                status: 302,
+                headers: { "cache-control": "private, no-store" },
+              }),
+            )
+          : homepage(auth.cookiePrefix, analytics.hero, dashboard(null)),
+      ),
       HttpRouter.add("GET", "/org/:organizationSlug", organizationRoot),
       ...dashboardPageRoutes.map((route) =>
         route === "/app-auth"
