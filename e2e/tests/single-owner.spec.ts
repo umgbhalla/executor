@@ -193,6 +193,20 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         expect((yield* request("Read updated owner name", "/get-session")).body.user.name).toBe(
           "My Executor",
         );
+        const agentKey = yield* request(
+          "Create an automatically pinned owner key",
+          "/api-key/create",
+          {
+            name: "Single owner scope check",
+          },
+        );
+        expect(agentKey.status).toBe(200);
+        yield* Effect.addFinalizer(() =>
+          request("Remove owner scope check key", "/api-key/delete", {
+            keyId: agentKey.body.id,
+          }).pipe(Effect.orDie),
+        );
+        expect(agentKey.body.metadata).toEqual({ organization: "private-executor" });
         for (const extra of [
           { email: "other@example.invalid" },
           { id: "another-owner" },

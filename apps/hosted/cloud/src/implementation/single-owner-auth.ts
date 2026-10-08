@@ -254,7 +254,8 @@ export const singleOwnerAuthOptions = (settings: Settings, ipAddressHeaders: str
           ].includes(path)
         )
           return deny();
-        if (path === "/passkey/verify-registration") ctx.body.createSession = false;
+        if (path === "/passkey/verify-registration")
+          ctx.body = { ...ctx.body, createSession: false };
         if (
           path.startsWith("/passkey/") &&
           !["/passkey/generate-authenticate-options", "/passkey/verify-authentication"].includes(
@@ -281,9 +282,17 @@ export const singleOwnerAuthOptions = (settings: Settings, ipAddressHeaders: str
           ctx.body = { name: body.name.trim() };
         }
         if (path === "/api-key/create") {
-          ctx.body.metadata = { ...ctx.body.metadata, organization: privateOrganizationId };
+          ctx.body = {
+            ...ctx.body,
+            metadata: { ...ctx.body.metadata, organization: privateOrganizationId },
+          };
         }
-        await base.hooks.before(ctx as Parameters<typeof base.hooks.before>[0]);
+        const result = await base.hooks.before(ctx as Parameters<typeof base.hooks.before>[0]);
+        // Better Auth invokes hooks with a copied context. Return rewritten input so
+        // the endpoint receives it; assigning ctx.body alone only changes this hook.
+        if (["/update-user", "/api-key/create", "/passkey/verify-registration"].includes(path))
+          return { context: { body: ctx.body } };
+        return result;
       }),
     },
     rateLimit: {
