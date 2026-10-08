@@ -264,8 +264,8 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         expect(retained.body.members[0].userId).toBe("private-owner");
         expect(retained.body.members[0].role).toBe("owner");
         yield* browser.checkpoint("Two hardware keys access the same locked owner account");
-        const deployed = yield* browser.use("Owner builds an authored app", async (page) => {
-          const response = await page
+        const deployed = yield* browser.use("Owner builds an authored app", (page) =>
+          page
             .context()
             .request.post(`${origin}/api/organizations/executor/apps/deploy`, {
               headers: { origin },
@@ -295,9 +295,11 @@ createAppClient().query(queryReference<typeof hello>("hello"), {}, string()).the
                   },
                 ],
               },
-            });
-          return { status: response.status(), body: await response.json() };
-        });
+            })
+            .then((response) =>
+              response.json().then((body) => ({ status: response.status(), body })),
+            ),
+        );
         expect(deployed.status).toBe(200);
         yield* Effect.addFinalizer(() =>
           browser
@@ -310,12 +312,14 @@ createAppClient().query(queryReference<typeof hello>("hello"), {}, string()).the
             )
             .pipe(Effect.orDie),
         );
-        const location = yield* browser.use("Read authored app location", async (page) => {
-          const response = await page
+        const location = yield* browser.use("Read authored app location", (page) =>
+          page
             .context()
-            .request.get(`${origin}/api/organizations/executor/apps/${deployed.body.id}/ui`);
-          return { status: response.status(), body: await response.json() };
-        });
+            .request.get(`${origin}/api/organizations/executor/apps/${deployed.body.id}/ui`)
+            .then((response) =>
+              response.json().then((body) => ({ status: response.status(), body })),
+            ),
+        );
         expect(location.status).toBe(200);
         expect(location.body.status).toBe("ready");
         yield* openPrivateApp(location.body.url);
