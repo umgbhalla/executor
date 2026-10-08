@@ -42,6 +42,31 @@ Other references: [domain terms](CONTEXT.md),
 [Axiom with two accounts](notes/axiom-mcp-accounts.md), and
 [runtime notes](notes/app-runtime.md).
 
+## Single-owner fork
+
+`fork/v2-single-owner` starts from upstream `v2` at `8f8be418`. Set the private
+`EXECUTOR_PAIRING_KEY` environment value to a secret of at least 32 characters
+to enable single-owner mode in the existing Cloud product. Omit it to retain
+upstream sign-in behavior. Set it for both migrations and the deployment.
+
+Open `/login`, choose **Pair this browser**, and paste the key to enroll a
+passkey or hardware security key. Pairing expires after five minutes and does
+not grant a login session. Sign in with a verified passkey afterward. Each
+pairing uses the same owner and organization; signup, invitations and new
+organizations are disabled. Keep the pairing key outside Git and rotate it
+through the deployment environment. This mode requires a fresh database.
+
+This branch retains upstream's Alchemy infrastructure and database adapter.
+The Cloud production stack provisions PlanetScale PostgreSQL and uses its
+existing Axiom, Autumn, Context and Cloudflare email services. Those provider
+settings are still required; this auth change does not replace them. Set
+`BETTER_AUTH_URL=https://executor.umgbhalla.com` in the private deployment
+environment and use `bun run --cwd apps/hosted/cloud deploy --stage v2`.
+
+Run the isolated scenario with
+`bun run e2e:cloud --single-owner --test-name 'single owner pairing admits multiple verified passkeys'`.
+Future upstream updates use `git fetch upstream v2` and `git merge upstream/v2`.
+
 ## Cloud onboarding E2E
 
 `bun run e2e:cloud --test-name 'Cloud onboarding'` starts the real local Cloud

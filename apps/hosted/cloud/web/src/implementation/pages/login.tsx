@@ -15,11 +15,13 @@ import { Cause, Exit, Option } from "effect";
 import { useEffect, useState } from "react";
 import { SsoSignInForm } from "./sso-sign-in.tsx";
 import { Spinner } from "@executor-js/ui/components/spinner";
+import { SingleOwnerLoginPage } from "./single-owner-login.tsx";
 import {
   finishCloudSignIn,
   passkeySignInAtom,
   beginEmailSignInAtom,
   verifyCodeAtom,
+  singleOwnerConfigurationAtom,
 } from "../../contracts/auth.ts";
 
 /** Cloud adds passkeys and verified email codes to the social sign-in choices. */
@@ -28,6 +30,31 @@ export function CloudLoginPage(
     readonly method?: "sso";
     readonly mode?: "signin" | "signup";
   },
+) {
+  const configuration = useAtomValue(singleOwnerConfigurationAtom);
+  const retry = useAtomRefresh(singleOwnerConfigurationAtom);
+  if (AsyncResult.isFailure(configuration))
+    return (
+      <div role="alert" className="min-h-dvh flex items-center justify-center gap-3">
+        <p>Unable to load sign-in settings.</p>
+        <Button onClick={retry}>Try again</Button>
+      </div>
+    );
+  if (!AsyncResult.isSuccess(configuration))
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  return configuration.value.enabled ? (
+    <SingleOwnerLoginPage {...props} />
+  ) : (
+    <StandardCloudLoginPage {...props} />
+  );
+}
+
+function StandardCloudLoginPage(
+  props: LoginProps & { readonly method?: "sso"; readonly mode?: "signin" | "signup" },
 ) {
   const session = useAtomValue(sessionAtom);
   const refresh = useAtomRefresh(sessionAtom);

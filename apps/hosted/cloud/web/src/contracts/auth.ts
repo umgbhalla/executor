@@ -4,7 +4,7 @@ import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import { dashboardAuthClientOptions } from "@executor-js/ui/contracts/http";
 import { emailOTPClient } from "better-auth/client/plugins";
-import { authRequest } from "@executor-js/hosted-web/contracts/auth";
+import { AuthFailed, authRequest } from "@executor-js/hosted-web/contracts/auth";
 import { Effect, Schema } from "effect";
 import { Atom } from "effect/reactivity";
 import { acknowledge, acknowledgedQuery, invalidate } from "@executor-js/ui/contracts/mutations";
@@ -22,6 +22,20 @@ export const cloudAuthClient = createAuthClient({
   ...dashboardAuthClientOptions,
   plugins: [passkeyClient(), emailOTPClient()],
 });
+
+/** Public policy only; the pairing secret stays on the server. */
+export const singleOwnerConfigurationAtom = BrowserAtoms.atom(
+  authRequest((options) => cloudAuthClient.$fetch<unknown>("/single-owner/config", options)).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ enabled: Schema.Boolean }))),
+    Effect.mapError(() => new AuthFailed({ message: "Unable to load sign-in settings." })),
+  ),
+);
+
+export const pairOwnerAtom = BrowserAtoms.fn((key: string) =>
+  authRequest((options) =>
+    cloudAuthClient.$fetch("/single-owner/pair", { ...options, method: "POST", body: { key } }),
+  ).pipe(Effect.asVoid),
+);
 /** Prefer verified company SSO; send a code only when the server confirms no SSO connection. */
 export const beginEmailSignInAtom = BrowserAtoms.fn(
   (input: { readonly email: string; readonly redirect: string }) =>

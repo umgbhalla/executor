@@ -8,6 +8,9 @@ import { NameAccountDialog } from "@executor-js/hosted-web/pages/name-account-di
 import { HostedNavigation } from "@executor-js/hosted-web/navigation";
 import { CloudSupport } from "../components/support.tsx";
 import { CloudNavigation } from "../components/navigation.tsx";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
+import { singleOwnerConfigurationAtom } from "../../contracts/auth.ts";
 
 /** The URL owns this tab's organization; all product pages inherit this boundary. Cloud records
  * product failures in PostHog, so its error cards can say a failure was tracked. */
@@ -18,10 +21,14 @@ export const Route = createFileRoute("/org/$organizationSlug")({
 });
 function OrganizationLayout() {
   const { organizationSlug } = Route.useParams();
+  const configuration = useAtomValue(singleOwnerConfigurationAtom);
   return (
     <OrganizationBoundary slug={organizationSlug}>
       <ErrorTrackingProvider>
         <DashboardShell
+          allowCreateOrganization={
+            AsyncResult.isSuccess(configuration) && !configuration.value.enabled
+          }
           navigation={
             <HostedNavigation>
               <CloudNavigation organizationSlug={organizationSlug} />

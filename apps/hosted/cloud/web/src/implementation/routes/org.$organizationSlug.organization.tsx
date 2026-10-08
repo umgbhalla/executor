@@ -10,6 +10,9 @@ import { DeleteOrganization } from "../components/delete-organization.tsx";
 import { SsoSettings } from "../components/sso-settings.tsx";
 import { BillingSettings } from "../components/billing-settings.tsx";
 import { memberLimitAtom } from "../../contracts/billing.ts";
+import { singleOwnerConfigurationAtom } from "../../contracts/auth.ts";
+import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
+import { Spinner } from "@executor-js/ui/components/spinner";
 
 /** Members cannot read billing, and cannot invite, so they never ask for the limit. */
 const noMemberLimit = Atom.make(AsyncResult.initial<{ readonly limit: number | null }>());
@@ -40,6 +43,26 @@ function useMemberLimit(): MemberLimit | undefined {
 }
 
 function CloudOrganizationPage() {
+  const configuration = useAtomValue(singleOwnerConfigurationAtom);
+  if (AsyncResult.isFailure(configuration))
+    return <p role="alert">Unable to load access settings.</p>;
+  if (!AsyncResult.isSuccess(configuration)) return <Spinner />;
+  if (configuration.value.enabled)
+    return (
+      <PageFrame>
+        <PageHeader title="Owner access" />
+        <p>
+          This Executor is locked to one owner. Additional accounts and invitations are disabled.
+        </p>
+        <Button asChild variant="outline">
+          <Link to="/account/security">Manage passkeys</Link>
+        </Button>
+      </PageFrame>
+    );
+  return <StandardOrganizationPage />;
+}
+
+function StandardOrganizationPage() {
   return (
     <OrganizationPage
       emailInvitations
