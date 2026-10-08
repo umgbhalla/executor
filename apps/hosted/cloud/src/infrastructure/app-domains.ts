@@ -4,12 +4,13 @@ import { RuntimeContext } from "alchemy";
 import { AppUiAddressInvalid } from "@executor-js/hosted-server/app-ui/contracts";
 import { OrganizationId, OrganizationSlug } from "@executor-js/hosted-server/organization";
 import { UiFailed } from "apps/ui/contracts";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import { Clock, Effect, Option, Redacted, Schema } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { timingSafeEqual } from "node:crypto";
 import { AppDomainController } from "./app-domain-controller-worker.ts";
 import { appDomainControlSecret } from "./app-domain-control.ts";
 import { cloudAppUiBase } from "../contracts/app-ui.ts";
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import { readAppDomainRecord } from "../implementation/app-domain-records.ts";
 
 export const Team = Schema.Struct({ id: OrganizationId, slug: OrganizationSlug });
@@ -50,6 +51,13 @@ const staleAfter = 15 * 60_000;
  * schedule if it was lost.
  */
 export const cloudAppDomains = Effect.gen(function* () {
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)))
+    return {
+      status: (_team: typeof Team.Type) => Effect.succeed("ready" as const),
+      control: (_operation: "resume" | "drain") =>
+        Effect.succeed(HttpServerResponse.empty({ status: 404 })),
+      heartbeat: Effect.void,
+    };
   const coordinator = yield* AppDomainCoordinator.from(AppDomainController);
   const base = yield* cloudAppUiBase.pipe(Effect.orDie);
   // Local development serves apps over HTTP and provisions no domains.

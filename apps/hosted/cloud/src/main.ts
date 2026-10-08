@@ -6,7 +6,8 @@ import {
 } from "./infrastructure/provisioning.ts";
 import { previewLifetime } from "./infrastructure/test-stage-expiry.ts";
 import { ExecutorCloudApi, executorCloudApiDocument } from "./contracts/api.ts";
-import { hostedAppUi, appAddresses } from "@executor-js/hosted-server/app-ui";
+import { hostedAppUi } from "@executor-js/hosted-server/app-ui";
+import { cloudAppAddresses } from "./implementation/app-addresses.ts";
 import { cloudAppUiBase } from "./contracts/app-ui.ts";
 import { cloudAppDomains } from "./infrastructure/app-domains.ts";
 import { AppRepositoryRecovery, WorkflowHost } from "@executor-js/sdk/core";
@@ -292,7 +293,7 @@ export default Api.make(
     );
     const dashboard = cloudDashboard(yield* Cloudflare.Workers.bindWorker(Dashboard));
     const appUi = hostedAppUi(
-      appAddresses(auth.origin, yield* cloudAppUiBase.pipe(Effect.orDie)),
+      cloudAppAddresses(auth.origin, yield* cloudAppUiBase.pipe(Effect.orDie), privateMode),
       appDomains.status,
     );
     // Session objects run in the MCP server Worker; this isolate authenticates and forwards.

@@ -6,8 +6,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Output from "alchemy/Output";
 import { Credentials, apiTokenCredentials } from "@distilled.cloud/cloudflare/Credentials";
 import { PgClient } from "@effect/sql-pg";
-import { Cause, Clock, DateTime, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
+import { Cause, Clock, DateTime, Effect, Layer, Option, Redacted, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
+import { singleOwnerPairingKey } from "./implementation/single-owner-auth.ts";
 import { cloudAppUiBase } from "./contracts/app-ui.ts";
 import { AppDomainZoneSettings } from "./contracts/app-domains.ts";
 import { appDomainCertificates } from "./implementation/app-domain-inventory.ts";
@@ -47,7 +48,11 @@ const observeDomainFailure = (phase: string, cause: Cause.Cause<unknown>) =>
 
 const makeAppDomainCoordinator = Effect.gen(function* () {
   const base = yield* cloudAppUiBase.pipe(Effect.orDie);
-  if (base === undefined || new URL(base).protocol !== "https:") {
+  if (
+    Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)) ||
+    base === undefined ||
+    new URL(base).protocol !== "https:"
+  ) {
     return Effect.succeed({
       wake: () => Effect.void,
       heartbeat: () => Effect.void,

@@ -86,7 +86,10 @@ export default Alchemy.Stack(
     if (appBase !== undefined) {
       const pages = yield* AppPages;
       yield* uploadCloudSourceMaps("app-pages", pages.hash).pipe(Effect.orDie);
-      if (!(yield* AlchemyContext).dev) {
+      if (
+        !(yield* AlchemyContext).dev &&
+        Option.isNone(yield* singleOwnerPairingKey.pipe(Effect.orDie))
+      ) {
         const controller = yield* AppDomainController;
         const lifecycle = yield* AppDomainLifecycle("AppDomains", {
           origin: yield* cloudOrigin.pipe(Effect.orDie),

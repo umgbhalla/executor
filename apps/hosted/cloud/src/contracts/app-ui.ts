@@ -1,6 +1,8 @@
 /** Cloud app hostnames are operator-provisioned separately from the dashboard's CDN origin. */
 import { AppUiBaseUrl } from "@executor-js/hosted-server/app-ui";
 import { Config, Effect, Option, Schema } from "effect";
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
+import { privateAppHostnameSuffix } from "../implementation/app-addresses.ts";
 import { testStage } from "../infrastructure/stage.ts";
 
 /** Disabled until the stage has an app-domain route and certificates; never fall back to another stage's domain. */
@@ -28,6 +30,8 @@ export const cloudAppUiRoute = Effect.gen(function* () {
   if (base === undefined) return yield* Effect.die(new Error("App UI base is required"));
   const preview = yield* testStage;
   const hostname = new URL(base).hostname;
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)))
+    return `*${privateAppHostnameSuffix}.${hostname}/*`;
   if (Option.isSome(preview)) {
     const zone = yield* Config.NonEmptyString("EXECUTOR_APP_DOMAIN_ZONE");
     if (!hostname.endsWith(`.${zone}`))

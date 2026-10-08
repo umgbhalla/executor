@@ -1,7 +1,7 @@
 import { requestServices } from "@executor-js/hosted-server";
 import { previewLifetime } from "./infrastructure/test-stage-expiry.ts";
 /** Private app-origin entry point. Dashboard assets and management APIs are never mounted here. */
-import { hostedAppUi, appAddresses } from "@executor-js/hosted-server/app-ui";
+import { hostedAppUi } from "@executor-js/hosted-server/app-ui";
 import { appPrivateHeaders, appSignInCallbackPath } from "apps/ui/auth";
 import { AppUiApi } from "apps/ui/contracts";
 import { AlchemyContext } from "alchemy/AlchemyContext";
@@ -9,6 +9,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import { Config, Effect, Layer, Option } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerError, HttpServerResponse } from "effect/http";
+import { cloudAppAddresses } from "./implementation/app-addresses.ts";
+import { singleOwnerPairingKey } from "./implementation/single-owner-auth.ts";
 import { cloudAppUiBase, cloudAppUiPort, cloudAppUiRoute } from "./contracts/app-ui.ts";
 import { recordRequestRejections, requestTiming } from "@executor-js/telemetry/http";
 import { cloudSentry } from "./implementation/error-reporting.ts";
@@ -74,7 +76,13 @@ export default class AppPages extends Cloudflare.Worker<AppPages>()(
     const appSessions = yield* cloudAppSessions;
     const executor = yield* cloudServingProduct(yield* appDataSupervisors);
     const base = yield* cloudAppUiBase.pipe(Effect.orDie);
-    const appUi = hostedAppUi(appAddresses(yield* cloudOrigin.pipe(Effect.orDie), base));
+    const appUi = hostedAppUi(
+      cloudAppAddresses(
+        yield* cloudOrigin.pipe(Effect.orDie),
+        base,
+        Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)),
+      ),
+    );
     const services = requestServices(Layer.mergeAll(appSessions, executor));
     const notFound = HttpServerResponse.empty({ status: 404 });
     const protectedRoutes = Layer.mergeAll(
