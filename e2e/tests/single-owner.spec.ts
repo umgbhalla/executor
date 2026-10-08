@@ -25,12 +25,10 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
                 ...(data === undefined ? {} : { data }),
               })
               .then((response) =>
-                response
-                  .text()
-                  .then((body) => ({
-                    status: response.status(),
-                    body: body ? JSON.parse(body) : null,
-                  })),
+                response.text().then((body) => ({
+                  status: response.status(),
+                  body: body ? JSON.parse(body) : null,
+                })),
               ),
           );
         yield* browser.omitNetworkTrace;
@@ -213,13 +211,15 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
             .then((response) => response.status()),
         );
         expect(removal).toBe(403);
-        const retained = yield* browser.use("Fixed organization remains accessible", (page) =>
-          page
-            .context()
-            .request.get("/api/organizations/private-executor", { headers: { origin } })
-            .then((response) => response.status()),
+        const retained = yield* request(
+          "Fixed organization and owner membership remain accessible",
+          "/organization/get-full-organization?organizationId=private-executor",
         );
-        expect(retained).toBe(200);
+        expect(retained.status).toBe(200);
+        expect(retained.body.id).toBe("private-executor");
+        expect(retained.body.members).toHaveLength(1);
+        expect(retained.body.members[0].userId).toBe("private-owner");
+        expect(retained.body.members[0].role).toBe("owner");
         yield* browser.checkpoint("Two hardware keys access the same locked owner account");
       }),
     ),
