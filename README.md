@@ -66,6 +66,9 @@ For private app pages, set `EXECUTOR_APP_UI_BASE_URL=https://umgbhalla.com`
 and configure proxied wildcard DNS for `*.umgbhalla.com`. Apps use
 `<app-slug>--ev2.umgbhalla.com`, with separate origins covered by Universal SSL.
 Private mode skips the paid shared app-domain certificate stack.
+Disable automatic Cloudflare Web Analytics injection for the app domain in
+Web Analytics > Manage site > Disable. An ad blocker can otherwise block the
+injected beacon and trigger the upstream app resource-error dialog.
 
 Run the isolated scenario with
 `bun run e2e:cloud --single-owner --test-name 'single owner pairing admits multiple verified passkeys'`.
