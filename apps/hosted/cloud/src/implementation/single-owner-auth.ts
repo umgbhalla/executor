@@ -3,7 +3,12 @@ import { authOptions } from "@executor-js/hosted-server";
 import { passkey } from "@better-auth/passkey";
 import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context";
 import type { BetterAuthPlugin, GenericEndpointContext } from "@better-auth/core";
-import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from "better-auth/api";
 import { organization } from "better-auth/plugins/organization";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
 
@@ -42,6 +47,10 @@ const deny = () => {
   throw new APIError("FORBIDDEN");
 };
 const enrollment = async (ctx: GenericEndpointContext) => {
+  if (ctx.headers?.has("authorization")) return deny();
+  const session = await getSessionFromCtx(ctx);
+  if (session?.user.id === privateOwnerId && session.user.emailVerified)
+    return { id: privateOwnerId, name: "Owner", displayName: "Owner" };
   const token = await ctx.getSignedCookie(enrollmentCookie, ctx.context.secret);
   if (!token) return deny();
   const value = await ctx.context.internalAdapter.findVerificationValue(

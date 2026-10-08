@@ -3,9 +3,10 @@ import {
   beginOrganizationRemoval,
   previewOrganizationRemoval,
   OrganizationId,
+  OrganizationForbidden,
   OrganizationTombstones,
 } from "@executor-js/hosted-server";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import {
@@ -13,6 +14,7 @@ import {
   OrganizationRemovalStart,
 } from "../infrastructure/organization-removal-workflow.ts";
 import { OrganizationRemovalRecovery } from "../infrastructure/organization-removal-recovery.ts";
+import { singleOwnerPairingKey } from "./single-owner-auth.ts";
 import { ExecutorCloudApi } from "../contracts/api.ts";
 
 /** Native membership rows outlive acceptance; never put a removed team back in the switcher. */
@@ -42,12 +44,16 @@ export const organizationRemovalHandlers = HttpApiBuilder.group(
   "organizationRemoval",
   (handlers) =>
     Effect.gen(function* () {
+      const singleOwner = Option.isSome(yield* singleOwnerPairingKey);
       const start = yield* OrganizationRemovalStart;
       const recover = yield* OrganizationRemovalRecovery;
       return handlers
-        .handle("preview", () => previewOrganizationRemoval)
+        .handle("preview", () =>
+          singleOwner ? Effect.fail(new OrganizationForbidden()) : previewOrganizationRemoval,
+        )
         .handle("remove", () =>
           Effect.gen(function* () {
+            if (singleOwner) return yield* new OrganizationForbidden();
             // Refuse, then hide. The tombstone commits before anything is
             // deleted, so from here no request resolves this organization and the
             // durable erasure that follows races with nothing.
