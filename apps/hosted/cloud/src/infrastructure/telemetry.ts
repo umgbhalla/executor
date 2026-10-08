@@ -1,4 +1,5 @@
 /** Alchemy provisions Axiom; its event scope owns the shared safe Effect exporters. */
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import { TelemetryConfig, telemetryConfig } from "@executor-js/telemetry";
 import { isolateTelemetry } from "@executor-js/telemetry/isolate";
 import { CurrentRuntimeContext } from "alchemy/RuntimeContext";
@@ -102,6 +103,14 @@ export const telemetryResources = Effect.gen(function* () {
  */
 export const cloudObservability = Effect.gen(function* () {
   if ((yield* AlchemyContext).dev) return {};
+  if (Option.isSome(yield* singleOwnerPairingKey))
+    return {
+      observability: {
+        enabled: true,
+        redactQueryString: true,
+        logs: { enabled: true, invocationLogs: true, persist: true },
+      },
+    };
   const stage = yield* Stage;
   const { names, traces, ingest } = yield* telemetryResources;
   const destination = yield* Cloudflare.Workers.ObservabilityDestination("PlatformTraces", {
@@ -131,7 +140,7 @@ export const cloudObservability = Effect.gen(function* () {
 
 /** Worker props own provisioning; local workerd uses only explicit local OTLP settings. */
 export const telemetryBindings = Effect.gen(function* () {
-  if ((yield* AlchemyContext).dev) {
+  if ((yield* AlchemyContext).dev || Option.isSome(yield* singleOwnerPairingKey)) {
     const config = yield* telemetryConfig("executor-cloud");
     const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(TelemetryConfig))(config);
     return { [binding]: Output.asOutput(Redacted.make(encoded)) };

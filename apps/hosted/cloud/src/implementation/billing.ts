@@ -7,7 +7,8 @@ import {
   type OrganizationId,
 } from "@executor-js/hosted-server";
 import { makeExecutionMemo } from "alchemy/Runtime/ExecutionMemo";
-import { Cause, Effect, Layer, Schema } from "effect";
+import { Cause, Effect, Layer, Option, Schema } from "effect";
+import { singleOwnerPairingKey } from "./single-owner-auth.ts";
 import { FetchHttpClient, HttpServerRequest } from "effect/http";
 import { AutumnClient, type AutumnRequestFailed } from "../contracts/autumn.ts";
 import { autumnLive } from "./autumn-client.ts";
@@ -55,6 +56,20 @@ const active = (customer: Subscriptions, plans: ReadonlyArray<string>) =>
 
 /** Resolve the selected Autumn environment once; each invocation owns its client. */
 export const billingLive = Effect.gen(function* () {
+  if (Option.isSome(yield* singleOwnerPairingKey))
+    return Layer.mergeAll(
+      Layer.succeed(BillingMeter, {
+        memberLimit: () => Effect.succeed(1),
+        syncSeats: () => Effect.void,
+        reconcileSeats: Effect.void,
+      }),
+      Layer.succeed(Billing, {
+        overview: () => Effect.succeed({ enterprise: false, plans: [], subscriptions: [] }),
+        checkout: () => Effect.fail(new BillingPlanUnavailable()),
+        portal: () => Effect.fail(new BillingUnavailable()),
+        cancel: (organization) => Effect.succeed({ customerId: organization, cancelled: [] }),
+      }),
+    );
   // Resolve during initialization so Alchemy binds every value into the Worker environment.
   const settings = yield* billingSettings.pipe(Effect.orDie);
   // Test-stage settings resolve at runtime, so build the client inside the invocation, not here.

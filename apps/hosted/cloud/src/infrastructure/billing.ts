@@ -3,6 +3,7 @@
  * drop-in instance: both answer the same API, and every stage runs the same admission, seat and
  * member-limit rules against whichever endpoint it was given.
  */
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import { Random } from "alchemy";
 import * as Output from "alchemy/Output";
 import { CurrentRuntimeContext } from "alchemy/RuntimeContext";
@@ -154,6 +155,7 @@ export const billingSettings = billingEndpoint.pipe(
  * private instance with no management API, so the deployment seeds the same declaration into it.
  */
 export const billingBindings = Effect.gen(function* () {
+  if (Option.isSome(yield* singleOwnerPairingKey)) return {};
   const stage = yield* Stage;
   const provision = (
     serverUrl: Output.Output<Redacted.Redacted<string>>,

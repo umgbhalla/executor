@@ -1,3 +1,4 @@
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import { BlobStore } from "@executor-js/sdk/core";
 import { cloudBlobs } from "./blobs.ts";
 import { cloudOrigin } from "./stage.ts";
@@ -7,7 +8,12 @@ import { makeExecutionMemo } from "alchemy/Runtime/ExecutionMemo";
 import { Config, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { cloudEmulators } from "./emulators.ts";
 import { FetchHttpClient } from "effect/http";
-import { Onboarding, OnboardingUnavailable, TeamIconNotFound } from "../contracts/onboarding.ts";
+import {
+  CompanyLookup,
+  Onboarding,
+  OnboardingUnavailable,
+  TeamIconNotFound,
+} from "../contracts/onboarding.ts";
 import { companyLookupLive } from "../implementation/company-profile.ts";
 import { makeOnboarding } from "../implementation/onboarding.ts";
 import { cloudDatabaseConnection } from "./database.ts";
@@ -17,12 +23,14 @@ export const cloudOnboarding = Effect.gen(function* () {
   const blobs = yield* cloudBlobs;
   const origin = yield* cloudOrigin;
   const emulators = yield* cloudEmulators;
-  const lookup = Option.isSome(emulators)
-    ? companyLookupLive(
-        Redacted.make(Redacted.value(emulators.value).company.token),
-        `${Redacted.value(emulators.value).company.baseUrl}/v1/brand/retrieve`,
-      )
-    : companyLookupLive(yield* Config.Redacted("CONTEXT_DEV_API_KEY"));
+  const lookup = Option.isSome(yield* singleOwnerPairingKey)
+    ? Layer.succeed(CompanyLookup, { lookup: () => Effect.succeed(null) })
+    : Option.isSome(emulators)
+      ? companyLookupLive(
+          Redacted.make(Redacted.value(emulators.value).company.token),
+          `${Redacted.value(emulators.value).company.baseUrl}/v1/brand/retrieve`,
+        )
+      : companyLookupLive(yield* Config.Redacted("CONTEXT_DEV_API_KEY"));
   const connection = yield* cloudDatabaseConnection;
   const service = yield* makeExecutionMemo(
     Effect.gen(function* () {

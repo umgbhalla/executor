@@ -1,4 +1,5 @@
 /** Cloudflare owns the sending domain and the Worker's native email binding. */
+import { singleOwnerPairingKey } from "../implementation/single-owner-auth.ts";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { AlchemyContext } from "alchemy/AlchemyContext";
 import { retain } from "alchemy/RemovalPolicy";
@@ -9,6 +10,7 @@ import { cloudEmulators } from "./emulators.ts";
 import { testStage } from "./stage.ts";
 import {
   EmailDeliveryFailed,
+  unavailableAuthEmail,
   type SendAuthEmail,
   type SendWelcomeEmail,
 } from "../contracts/email.ts";
@@ -32,6 +34,7 @@ const emailDomain = Config.String("AUTH_EMAIL_DOMAIN").pipe(
 
 /** Deploy-only provisioning; local cloud development never changes email DNS. */
 export const authEmailInfrastructure = Effect.gen(function* () {
+  if (Option.isSome(yield* singleOwnerPairingKey)) return;
   if ((yield* AlchemyContext).dev || Option.isSome(yield* testStage)) return;
   // Existing sender domains are onboarded separately after reviewing shared DNS.
   if (!(yield* Config.Boolean("AUTH_EMAIL_PROVISION_SUBDOMAIN").pipe(Config.withDefault(false))))
@@ -49,6 +52,8 @@ export const authEmailInfrastructure = Effect.gen(function* () {
  * its native binding; production keeps Cloudflare delivery.
  */
 export const cloudEmail = Effect.gen(function* () {
+  if (Option.isSome(yield* singleOwnerPairingKey))
+    return { send: unavailableAuthEmail, welcome: unavailableAuthEmail };
   const from = `no-reply@${yield* emailDomain}`;
   const founder = "rhys@executor.sh";
   // Better Auth starts new Effect fibers. Preserve the environment that owns resource outputs.
