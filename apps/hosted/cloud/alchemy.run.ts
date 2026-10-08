@@ -7,7 +7,8 @@ import * as Planetscale from "alchemy/Planetscale";
 import * as Neon from "alchemy/Neon";
 import * as Docker from "alchemy/Docker";
 import { AlchemyContext } from "alchemy/AlchemyContext";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option } from "effect";
+import { singleOwnerPairingKey } from "./src/implementation/single-owner-auth.ts";
 import AppPages from "./src/app-ui.ts";
 import { cloudAppUiBase } from "./src/contracts/app-ui.ts";
 import ApiLive, { Api } from "./src/main.ts";
@@ -59,13 +60,16 @@ export default Alchemy.Stack(
       // No PlanetScale resources or credentials are needed for local cloud development.
       Docker.providers(),
       Layer.unwrap(
-        AlchemyContext.pipe(
-          Effect.map(({ dev }) =>
-            dev
+        Effect.gen(function* () {
+          if ((yield* AlchemyContext).dev) return Layer.empty;
+          return Layer.mergeAll(
+            Planetscale.providers(),
+            Neon.providers(),
+            Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie))
               ? Layer.empty
-              : Layer.mergeAll(Planetscale.providers(), Neon.providers(), Axiom.providers()),
-          ),
-        ),
+              : Axiom.providers(),
+          );
+        }),
       ),
     ),
     state: stackState,
