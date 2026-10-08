@@ -34,8 +34,9 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
           (yield* request("Read single-owner policy", "/single-owner/config")).body.enabled,
         ).toBe(true);
         expect(
-          (yield* request("Reject wrong pairing key", "/single-owner/pair", { key: "wrong" }))
-            .status,
+          (yield* request("Reject wrong pairing key", "/single-owner/pair", {
+            key: "invalid-key-that-cannot-pair-this-browser",
+          })).status,
         ).toBe(403);
         for (const path of [
           "/sign-up/email",
@@ -162,6 +163,20 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
             role: "member",
           })).status,
         ).toBe(403);
+        const removal = yield* browser.use("Owner cannot remove the fixed organization", (page) =>
+          page
+            .context()
+            .request.delete("/api/organizations/private-executor", { headers: { origin } })
+            .then((response) => response.status()),
+        );
+        expect(removal).toBe(403);
+        const retained = yield* browser.use("Fixed organization remains accessible", (page) =>
+          page
+            .context()
+            .request.get("/api/organizations/private-executor", { headers: { origin } })
+            .then((response) => response.status()),
+        );
+        expect(retained).toBe(200);
         yield* browser.checkpoint("Two hardware keys access the same locked owner account");
       }),
     ),
