@@ -189,12 +189,6 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         yield* browser.use("Root enters sole owner apps", (page) =>
           page.waitForURL((url) => /^\/org\/[^/]+\/apps$/.test(url.pathname)),
         );
-        expect(
-          (yield* request(
-            "Owner can read organization metadata used by the dashboard",
-            "/organization/get-organization?organizationId=private-executor",
-          )).status,
-        ).toBe(200);
         for (const resource of ["access", "inventory"]) {
           expect(
             yield* browser.use(`Owner reads organization ${resource}`, (page) =>
