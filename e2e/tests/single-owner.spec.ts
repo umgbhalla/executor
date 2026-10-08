@@ -138,6 +138,15 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         const current = (yield* request("Read sole owner session", "/get-session")).body;
         expect(current.user.id).toBe("private-owner");
         expect(current.session.activeOrganizationId).toBe("private-executor");
+        yield* browser.use("Drop expired pairing authority after owner login", (page) =>
+          page.context().clearCookies({ name: "executor-private-enrollment" }),
+        );
+        expect(
+          (yield* request(
+            "Verified owner can enroll without pairing cookie",
+            "/passkey/generate-register-options",
+          )).status,
+        ).toBe(200);
         const passkeys = (yield* request(
           "Both hardware keys belong to owner",
           "/passkey/list-user-passkeys",
