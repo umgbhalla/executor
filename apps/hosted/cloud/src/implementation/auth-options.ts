@@ -22,6 +22,11 @@ import { passkeyEnrollmentCookie } from "../contracts/passkey-enrollment.ts";
 import { cloudEmulators } from "../infrastructure/emulators.ts";
 import { emulatedSocialProviders } from "./emulated-auth.ts";
 import { cloudSso, ssoVerifiedEmail } from "./sso.ts";
+import {
+  singleOwnerAuthOptions,
+  singleOwnerConfiguration,
+  singleOwnerPairingKey,
+} from "./single-owner-auth.ts";
 import { cloudMemberLimit } from "./member-limit.ts";
 
 /** The better-auth endpoint that creates accounts from a verified email code. */
@@ -57,7 +62,21 @@ const OAuthProxySettings = Schema.Struct({
 /** Require both cloud social providers and reject blank credentials at startup. */
 export const cloudAuthSettings = Effect.gen(function* () {
   const url = yield* cloudOrigin;
+  const pairingKey = yield* singleOwnerPairingKey;
   const emulators = yield* cloudEmulators;
+  if (Option.isSome(pairingKey))
+    return {
+      url,
+      pairingKey,
+      oauthRedirectUri: Option.none<typeof HttpUrl.Type>(),
+      oauthProxy: Option.none<{ productionUrl: string; secret: Redacted.Redacted<string> }>(),
+      trustedOrigins: [] as string[],
+      emulators,
+      googleClientId: "",
+      googleClientSecret: Redacted.make(""),
+      githubClientId: "",
+      githubClientSecret: Redacted.make(""),
+    };
   const oauthRedirectUri = yield* Config.String("EXECUTOR_OAUTH_CALLBACK_URL").pipe(
     Config.option,
     Effect.flatMap(Schema.decodeUnknownEffect(Schema.Option(HttpUrl))),
@@ -118,6 +137,7 @@ export const cloudAuthSettings = Effect.gen(function* () {
   });
   return {
     url,
+    pairingKey,
     oauthRedirectUri,
     oauthProxy,
     trustedOrigins,
@@ -144,6 +164,11 @@ export const cloudAuthOptions = (
   onLogin?: (userId: string) => Promise<void>,
   onOperation?: (usage: NativeAuthUsage) => Promise<void>,
 ) => {
+  if (Option.isSome(settings.pairingKey))
+    return singleOwnerAuthOptions(
+      { ...settings, pairingKey: settings.pairingKey.value },
+      ipAddressHeaders,
+    );
   const base = authOptions(settings, ipAddressHeaders);
   return {
     ...base,
@@ -260,6 +285,7 @@ export const cloudAuthOptions = (
         ),
     },
     plugins: [
+      singleOwnerConfiguration(false),
       ...(onOperation === undefined ? [] : [nativeAuthAnalytics(onOperation)]),
       ...Option.match(settings.emulators, {
         onSome: (services) => [emulatedSocialProviders(services)],

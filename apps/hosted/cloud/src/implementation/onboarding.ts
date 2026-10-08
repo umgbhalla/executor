@@ -20,6 +20,7 @@ import {
   CreateTeam,
   TeamIconNotFound,
 } from "../contracts/onboarding.ts";
+import { singleOwnerPairingKey } from "./single-owner-auth.ts";
 import { makeOnboardingStore } from "./onboarding-store.ts";
 
 const companyDomain = (email: string): string | null => {
@@ -57,6 +58,7 @@ export const recoverSetupConnection = <A, E, R>(operation: Effect.Effect<A, E, R
 export const makeOnboarding = Effect.fn("onboarding.service")(function* (options: {
   readonly origin: string;
 }) {
+  const singleOwner = Option.isSome(yield* singleOwnerPairingKey);
   const blobs = yield* BlobStore;
   const store = yield* makeOnboardingStore;
   const lookup = yield* CompanyLookup;
@@ -123,6 +125,7 @@ export const makeOnboarding = Effect.fn("onboarding.service")(function* (options
 
   const create: typeof Onboarding.Service.create = (userId, input) =>
     Effect.gen(function* () {
+      if (singleOwner) return yield* new OnboardingUnavailable();
       const selected = yield* Schema.decodeUnknownEffect(Schema.toType(CreateTeam))({
         ...input,
         name: input.name.trim(),
