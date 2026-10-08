@@ -185,6 +185,36 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         const current = (yield* request("Read sole owner session", "/get-session")).body;
         expect(current.user.id).toBe("private-owner");
         expect(current.session.activeOrganizationId).toBe("private-executor");
+        expect(
+          (yield* request("Owner updates display name", "/update-user", {
+            name: "  My Executor  ",
+          })).status,
+        ).toBe(200);
+        expect((yield* request("Read updated owner name", "/get-session")).body.user.name).toBe(
+          "My Executor",
+        );
+        for (const extra of [
+          { email: "other@example.invalid" },
+          { id: "another-owner" },
+          { role: "admin" },
+          { image: "https://example.invalid/image.png" },
+        ]) {
+          expect(
+            (yield* request("Reject owner identity change", "/update-user", {
+              name: "Rejected name",
+              ...extra,
+            })).status,
+          ).toBe(403);
+        }
+        for (const name of ["   ", "x".repeat(121)]) {
+          expect(
+            (yield* request("Reject invalid owner name", "/update-user", { name })).status,
+          ).toBe(403);
+        }
+        const unchanged = (yield* request("Owner identity stays locked", "/get-session")).body.user;
+        expect(unchanged.id).toBe("private-owner");
+        expect(unchanged.email).toBe(current.user.email);
+        expect(unchanged.name).toBe("My Executor");
         yield* browser.use("Signed owner opens private root", (page) => page.goto("/"));
         yield* browser.use("Root enters sole owner apps", (page) =>
           page.waitForURL((url) => /^\/org\/[^/]+\/apps$/.test(url.pathname)),
@@ -257,6 +287,25 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         expect(retained.body.members).toHaveLength(1);
         expect(retained.body.members[0].userId).toBe("private-owner");
         expect(retained.body.members[0].role).toBe("owner");
+        expect(
+          yield* browser.use("Private navigation hides billing", (page) =>
+            page.getByRole("link", { name: "Billing", exact: true }).count(),
+          ),
+        ).toBe(0);
+        yield* browser.use("Owner opens private billing page", (page) =>
+          page.goto("/org/executor/billing"),
+        );
+        yield* browser.use("Private billing explains its status", (page) =>
+          page
+            .getByText("Billing is not used for this private instance.", { exact: true })
+            .waitFor(),
+        );
+        expect(
+          yield* browser.use("Private billing has no management action", (page) =>
+            page.getByRole("button", { name: "Manage billing", exact: true }).count(),
+          ),
+        ).toBe(0);
+        yield* browser.use("Owner returns to apps", (page) => page.goto("/org/executor/apps"));
         yield* browser.checkpoint("Two hardware keys access the same locked owner account");
         const deployed = yield* browser.use("Owner builds an authored app", (page) =>
           page

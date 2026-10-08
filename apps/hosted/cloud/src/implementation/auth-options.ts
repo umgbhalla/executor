@@ -62,13 +62,17 @@ const OAuthProxySettings = Schema.Struct({
 /** Require both cloud social providers and reject blank credentials at startup. */
 export const cloudAuthSettings = Effect.gen(function* () {
   const url = yield* cloudOrigin;
+  const oauthRedirectUri = yield* Config.String("EXECUTOR_OAUTH_CALLBACK_URL").pipe(
+    Config.option,
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Option(HttpUrl))),
+  );
   const pairingKey = yield* singleOwnerPairingKey;
   const emulators = yield* cloudEmulators;
   if (Option.isSome(pairingKey))
     return {
       url,
       pairingKey,
-      oauthRedirectUri: Option.none<typeof HttpUrl.Type>(),
+      oauthRedirectUri,
       oauthProxy: Option.none<{ productionUrl: string; secret: Redacted.Redacted<string> }>(),
       trustedOrigins: [] as string[],
       emulators,
@@ -77,10 +81,6 @@ export const cloudAuthSettings = Effect.gen(function* () {
       githubClientId: "",
       githubClientSecret: Redacted.make(""),
     };
-  const oauthRedirectUri = yield* Config.String("EXECUTOR_OAUTH_CALLBACK_URL").pipe(
-    Config.option,
-    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Option(HttpUrl))),
-  );
   // Emulators own direct callbacks. Do not resolve real proxy credentials in this mode,
   // including retained deployment bindings from a previous non-emulated version.
   const oauthProxy = Option.isSome(emulators)

@@ -237,7 +237,7 @@ export const singleOwnerAuthOptions = (settings: Settings, ipAddressHeaders: str
           path.startsWith("/unlink-account") ||
           path.startsWith("/delete-user") ||
           (path.startsWith("/self-host/") && path !== "/self-host/config") ||
-          path.startsWith("/update-user") ||
+          (path.startsWith("/update-user") && path !== "/update-user") ||
           path.startsWith("/change-email")
         )
           return deny();
@@ -264,6 +264,22 @@ export const singleOwnerAuthOptions = (settings: Settings, ipAddressHeaders: str
           ctx.headers?.get("origin") !== settings.url
         )
           return deny();
+        if (path === "/update-user") {
+          if (ctx.headers?.has("authorization") || ctx.headers?.get("origin") !== settings.url)
+            return deny();
+          const session = await getSessionFromCtx(ctx);
+          if (session?.user.id !== privateOwnerId || !session.user.emailVerified) return deny();
+          const body = ctx.body;
+          if (
+            !body ||
+            Object.keys(body).length !== 1 ||
+            typeof body.name !== "string" ||
+            body.name.trim().length === 0 ||
+            body.name.trim().length > 120
+          )
+            return deny();
+          ctx.body = { name: body.name.trim() };
+        }
         if (path === "/api-key/create") {
           ctx.body.metadata = { ...ctx.body.metadata, organization: privateOrganizationId };
         }
