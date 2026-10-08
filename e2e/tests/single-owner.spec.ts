@@ -4,6 +4,8 @@ import { Effect } from "effect";
 import { Browser } from "../support/browser.ts";
 import { TestLive, withCase } from "../support/case.ts";
 import { Target, driver } from "../support/platform.ts";
+import { appsManifest } from "../support/apps-release.ts";
+import { openPrivateApp } from "../support/app-pages.ts";
 
 layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
   it.effect("single owner pairing admits multiple verified passkeys", (context) =>
@@ -187,6 +189,30 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         yield* browser.use("Root enters sole owner apps", (page) =>
           page.waitForURL((url) => /^\/org\/[^/]+\/apps$/.test(url.pathname)),
         );
+        expect(
+          (yield* request(
+            "Owner can read organization metadata used by the dashboard",
+            "/organization/get-organization?organizationId=private-executor",
+          )).status,
+        ).toBe(200);
+        for (const resource of ["access", "inventory"]) {
+          expect(
+            yield* browser.use(`Owner reads organization ${resource}`, (page) =>
+              page
+                .context()
+                .request.get(`/api/organizations/executor/${resource}`)
+                .then((response) => response.status()),
+            ),
+          ).toBe(200);
+        }
+        yield* browser.use("Owner apps page finishes loading", (page) =>
+          page.getByRole("heading", { name: "Apps", exact: true }).waitFor(),
+        );
+        expect(
+          yield* browser.use("No denied organization card", (page) =>
+            page.getByText("Organization access denied", { exact: true }).count(),
+          ),
+        ).toBe(0);
         yield* browser.use("Drop expired pairing authority after owner login", (page) =>
           page.context().clearCookies({ name: "executor-private-enrollment" }),
         );
@@ -238,6 +264,68 @@ layer(TestLive, { excludeTestServices: true })("Single owner", (it) => {
         expect(retained.body.members[0].userId).toBe("private-owner");
         expect(retained.body.members[0].role).toBe("owner");
         yield* browser.checkpoint("Two hardware keys access the same locked owner account");
+        const deployed = yield* browser.use("Owner builds an authored app", async (page) => {
+          const response = await page
+            .context()
+            .request.post(`${origin}/api/organizations/executor/apps/deploy`, {
+              headers: { origin },
+              data: {
+                name: "Owner app",
+                files: [
+                  appsManifest,
+                  {
+                    path: "index.ts",
+                    content: `import { defineApp, query, object, router } from "apps";
+export const hello = query({ input: object({}) }, async () => "Owner tool works");
+export default defineApp({ accounts: {} }, { tools: router({ hello }) });`,
+                  },
+                  {
+                    path: "ui/index.html",
+                    content:
+                      '<!doctype html><html><body><h1>Owner authored app</h1><p role="status">Loading</p><script type="module" src="./main.ts"></script></body></html>',
+                  },
+                  {
+                    path: "ui/main.ts",
+                    content: `import { string } from "apps";
+import { createAppClient, queryReference } from "apps/client";
+import type { hello } from "../index.ts";
+createAppClient().query(queryReference<typeof hello>("hello"), {}, string()).then((value) => {
+  document.querySelector('[role="status"]').textContent = value;
+}).catch(() => { document.querySelector('[role="status"]').textContent = "Tool failed"; });`,
+                  },
+                ],
+              },
+            });
+          return { status: response.status(), body: await response.json() };
+        });
+        expect(deployed.status).toBe(200);
+        yield* Effect.addFinalizer(() =>
+          browser
+            .use("Remove authored owner app", (page) =>
+              page
+                .context()
+                .request.delete(`${origin}/api/organizations/executor/apps/${deployed.body.id}`, {
+                  headers: { origin },
+                }),
+            )
+            .pipe(Effect.orDie),
+        );
+        const location = yield* browser.use("Read authored app location", async (page) => {
+          const response = await page
+            .context()
+            .request.get(`${origin}/api/organizations/executor/apps/${deployed.body.id}/ui`);
+          return { status: response.status(), body: await response.json() };
+        });
+        expect(location.status).toBe(200);
+        expect(location.body.status).toBe("ready");
+        yield* openPrivateApp(location.body.url);
+        yield* browser.use("Authored app UI loads", (page) =>
+          page.getByRole("heading", { name: "Owner authored app", exact: true }).waitFor(),
+        );
+        yield* browser.use("App client calls the real owner tool", (page) =>
+          page.getByRole("status").filter({ hasText: "Owner tool works" }).waitFor(),
+        );
+        yield* browser.checkpoint("Owner builds and opens an app with a working tool");
       }),
     ),
   );
