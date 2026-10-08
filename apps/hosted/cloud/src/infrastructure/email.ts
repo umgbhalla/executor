@@ -34,7 +34,7 @@ const emailDomain = Config.String("AUTH_EMAIL_DOMAIN").pipe(
 
 /** Deploy-only provisioning; local cloud development never changes email DNS. */
 export const authEmailInfrastructure = Effect.gen(function* () {
-  if (Option.isSome(yield* singleOwnerPairingKey)) return;
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie))) return;
   if ((yield* AlchemyContext).dev || Option.isSome(yield* testStage)) return;
   // Existing sender domains are onboarded separately after reviewing shared DNS.
   if (!(yield* Config.Boolean("AUTH_EMAIL_PROVISION_SUBDOMAIN").pipe(Config.withDefault(false))))
@@ -52,7 +52,7 @@ export const authEmailInfrastructure = Effect.gen(function* () {
  * its native binding; production keeps Cloudflare delivery.
  */
 export const cloudEmail = Effect.gen(function* () {
-  if (Option.isSome(yield* singleOwnerPairingKey))
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)))
     return { send: unavailableAuthEmail, welcome: unavailableAuthEmail };
   const from = `no-reply@${yield* emailDomain}`;
   const founder = "rhys@executor.sh";

@@ -23,7 +23,7 @@ export const cloudOnboarding = Effect.gen(function* () {
   const blobs = yield* cloudBlobs;
   const origin = yield* cloudOrigin;
   const emulators = yield* cloudEmulators;
-  const lookup = Option.isSome(yield* singleOwnerPairingKey)
+  const lookup = Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie))
     ? Layer.succeed(CompanyLookup, { lookup: () => Effect.succeed(null) })
     : Option.isSome(emulators)
       ? companyLookupLive(

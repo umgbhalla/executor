@@ -56,7 +56,7 @@ const active = (customer: Subscriptions, plans: ReadonlyArray<string>) =>
 
 /** Resolve the selected Autumn environment once; each invocation owns its client. */
 export const billingLive = Effect.gen(function* () {
-  if (Option.isSome(yield* singleOwnerPairingKey))
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)))
     return Layer.mergeAll(
       Layer.succeed(BillingMeter, {
         memberLimit: () => Effect.succeed(1),

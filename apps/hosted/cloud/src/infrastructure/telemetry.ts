@@ -103,7 +103,7 @@ export const telemetryResources = Effect.gen(function* () {
  */
 export const cloudObservability = Effect.gen(function* () {
   if ((yield* AlchemyContext).dev) return {};
-  if (Option.isSome(yield* singleOwnerPairingKey))
+  if (Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie)))
     return {
       observability: {
         enabled: true,
@@ -140,7 +140,10 @@ export const cloudObservability = Effect.gen(function* () {
 
 /** Worker props own provisioning; local workerd uses only explicit local OTLP settings. */
 export const telemetryBindings = Effect.gen(function* () {
-  if ((yield* AlchemyContext).dev || Option.isSome(yield* singleOwnerPairingKey)) {
+  if (
+    (yield* AlchemyContext).dev ||
+    Option.isSome(yield* singleOwnerPairingKey.pipe(Effect.orDie))
+  ) {
     const config = yield* telemetryConfig("executor-cloud");
     const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(TelemetryConfig))(config);
     return { [binding]: Output.asOutput(Redacted.make(encoded)) };
