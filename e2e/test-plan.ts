@@ -6,7 +6,9 @@ import type { Target } from "./report-model.ts";
 export const TargetPlan = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("scheduled"),
-    runtime: Schema.optional(Schema.Literals(["managed", "attached", "rate-limited"])),
+    runtime: Schema.optional(
+      Schema.Literals(["managed", "attached", "rate-limited", "single-owner"]),
+    ),
   }),
   Schema.Struct({
     status: Schema.Literal("not-applicable"),
@@ -5566,6 +5568,15 @@ export const scenarios = plan({
       local: na("This test checks Cloud's hosted sign-in and viewer routes."),
     },
   },
+  singleOwner: {
+    file: "single-owner.spec.ts",
+    title: "single owner pairing admits multiple verified passkeys",
+    targets: {
+      cloud: { status: "scheduled", runtime: "single-owner" },
+      "self-host": na("This case exercises Cloud single-owner admission."),
+      local: na("Local uses its existing device pairing."),
+    },
+  },
   enrollmentRefresh: {
     file: "enrollment-refresh.spec.ts",
     title: "Cloud passkey enrollment retains errors and focus during session refresh",
@@ -5578,9 +5589,10 @@ export const scenarios = plan({
  * deployed test stages do; a rate-limited run starts it with the limit on for the scenarios that
  * prove it, and runs only those.
  */
-export type CloudMode = "managed" | "attached" | "rate-limited";
+export type CloudMode = "managed" | "attached" | "rate-limited" | "single-owner";
 
 const cloudRuntimeReasons = {
+  "single-owner": "Requires isolated managed Cloud: e2e:cloud --single-owner.",
   managed: "Requires the managed local Cloud target and its local collectors.",
   attached: "Requires a deployed Cloud target with Cloudflare's memory limit.",
   "rate-limited":
@@ -5600,7 +5612,9 @@ export const scenariosForSuite = (suite: "all" | "hosted", cloudMode: CloudMode 
       const cloud = scenario.targets.cloud;
       if (cloud.status !== "scheduled") return scenario;
       const runs =
-        cloud.runtime === undefined ? cloudMode !== "rate-limited" : cloud.runtime === cloudMode;
+        cloud.runtime === undefined
+          ? cloudMode !== "rate-limited" && cloudMode !== "single-owner"
+          : cloud.runtime === cloudMode;
       return runs
         ? scenario
         : {

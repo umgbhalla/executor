@@ -47,6 +47,7 @@ export const runSuite = ({
   workers,
   defaultWorkers = 16,
   authRateLimit = false,
+  singleOwner = false,
   attachment,
 }: {
   readonly target: "self-host" | "local" | "cloud" | "all" | "hosted";
@@ -57,6 +58,8 @@ export const runSuite = ({
   readonly defaultWorkers?: number;
   /** Start managed Cloud with the per-address auth limit on, for the scenarios that prove it. */
   readonly authRateLimit?: boolean;
+  /** Start an isolated Cloud with synthetic single-owner pairing credentials. */
+  readonly singleOwner?: boolean;
   readonly attachment?: {
     readonly origin: string;
     readonly fixtures: typeof FixtureControl.Type;
@@ -102,6 +105,11 @@ export const runSuite = ({
                 ),
               )
             : Option.none<string>();
+      if (singleOwner && (selected !== "cloud" || Option.isSome(cloud) || authRateLimit))
+        return yield* new RunFailed({
+          message:
+            "Single-owner scenarios require managed Cloud without --auth-rate-limit or E2E_CLOUD_URL.",
+        });
       if (authRateLimit && (selected !== "cloud" || Option.isSome(cloud)))
         return yield* new RunFailed({
           message:
@@ -141,9 +149,11 @@ export const runSuite = ({
       const startedAt = new Date().toISOString();
       const cloudMode: CloudMode = Option.isSome(cloud)
         ? "attached"
-        : authRateLimit
-          ? "rate-limited"
-          : "managed";
+        : singleOwner
+          ? "single-owner"
+          : authRateLimit
+            ? "rate-limited"
+            : "managed";
       const plan = scenariosForSuite(selected === "hosted" ? "hosted" : "all", cloudMode);
       const filter = yield* Effect.try({
         try: () => new RegExp(name),
@@ -216,6 +226,7 @@ export const runSuite = ({
                         commit,
                         observeUI,
                         authRateLimit,
+                        singleOwner,
                       })
                     : undefined;
                   const preparedScenarios =

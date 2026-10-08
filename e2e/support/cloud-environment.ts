@@ -30,6 +30,7 @@ export const startCloudEnvironment = (input: {
    * scenarios that prove it.
    */
   readonly authRateLimit: boolean;
+  readonly singleOwner?: boolean;
   /** Registry the local Cloud compiler resolves app packages from. */
   readonly npmRegistry?: string;
 }) =>
@@ -79,6 +80,9 @@ export const startCloudEnvironment = (input: {
       // Local artifact addresses need an account-shaped ID, never a real cloud credential.
       CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000",
       BETTER_AUTH_URL: input.origin,
+      ...(input.singleOwner
+        ? { EXECUTOR_PAIRING_KEY: "synthetic-single-owner-pairing-key-for-e2e" }
+        : {}),
       BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
       EXECUTOR_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
       EXECUTOR_BUILD_VERSION: input.commit,

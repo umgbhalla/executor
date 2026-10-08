@@ -23,6 +23,7 @@ const command = Command.make(
     // Without it, managed Cloud caps `defaultWorkers`; see `runSuite`.
     workers: Flag.Int("workers").pipe(Flag.optional),
     // Start managed Cloud with the per-address auth limit on and run only the scenarios proving it.
+    singleOwner: Flag.Boolean("single-owner").pipe(Flag.withDefault(false)),
     authRateLimit: Flag.Boolean("auth-rate-limit").pipe(Flag.withDefault(false)),
   },
   (flags) => runSuite({ ...flags, workers: Option.getOrUndefined(flags.workers), defaultWorkers }),
